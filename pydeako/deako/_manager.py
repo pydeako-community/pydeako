@@ -203,6 +203,9 @@ class _Manager:
             else:
                 _LOGGER.warning("Never received pong! Dumping this connection")
                 self.close()
+                # close() marks the manager canceled, but this is a
+                # reconnect: a failed attempt must still be retried.
+                self.state.canceled = False
                 self.create_connection_task()
                 break
 

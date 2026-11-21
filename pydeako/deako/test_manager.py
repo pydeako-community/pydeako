@@ -589,6 +589,34 @@ async def test_background_connect_error_retries(connection_mock, worker_mock):
     manager.close()
 
 
+@patch("pydeako.deako._manager.CONNECTION_RETRY_DELAY_S", 0)
+@patch("pydeako.deako._manager.CONNECTED_POLLING_INTERVAL_S", 0.01)
+@patch("pydeako.deako._manager._Manager.send_request")
+@patch("pydeako.deako._manager._Connection")
+@pytest.mark.asyncio
+async def test_reconnect_error_after_lost_connection_retries(
+    connection_mock, _send_request_mock,
+):
+    """Test an unexpected error is also retried after a lost connection."""
+    connection_mock.return_value.is_connected.return_value = True
+    get_address = AsyncMock(
+        side_effect=[RuntimeError("boom"), ("1.2.3.4:23", "dev")],
+    )
+    manager = _Manager(get_address, Mock())
+
+    # no pong arrives, so the worker closes the connection and reconnects
+    with patch("pydeako.deako._manager.PING_WORKER_WAIT_S", 0):
+        await manager.maintain_connection_worker()
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if manager.connection is not None:
+            break
+
+    assert get_address.await_count == 2
+    assert manager.connection is connection_mock.return_value
+    manager.close()
+
+
 @patch("pydeako.deako._manager._Manager.maintain_connection_worker")
 @patch("pydeako.deako._manager._Manager.create_connection_task")
 @patch("pydeako.deako._manager._Connection")
