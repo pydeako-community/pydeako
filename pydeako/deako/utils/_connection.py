@@ -204,6 +204,9 @@ class _Connection:
             elif self.state == ConnectionState.CONNECTED:
                 try:
                     await self.read_socket()
+                    # A read returns without suspending while data is
+                    # waiting, so let other tasks run between reads.
+                    await asyncio.sleep(0)
                 # pylint: disable-next=broad-exception-caught
                 except Exception as exc:
                     _LOGGER.error(

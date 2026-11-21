@@ -1,5 +1,6 @@
 """Tests _Connection."""
 
+import asyncio
 import json
 from uuid import uuid4
 from unittest.mock import AsyncMock, call, Mock, patch
@@ -412,6 +413,7 @@ async def test_state_machine_read_failure(
     address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
+    asyncio_mock.sleep = AsyncMock()  # run() yields after each read
 
     conn = _Connection(address, name, Mock())
     conn.state = ConnectionState.CONNECTED
@@ -425,6 +427,37 @@ async def test_state_machine_read_failure(
     await conn.run()
 
     socket_connection_instance.close_socket.assert_called_once()
+
+
+@patch(
+    "pydeako.deako.utils._connection._SocketConnection", spec=_SocketConnection
+)
+@patch("pydeako.deako.utils._connection._Connection.init_run")
+@pytest.mark.asyncio
+async def test_state_machine_yields_between_reads(
+    _init_run_mock, socket_connection_mock
+):
+    """Test other tasks get a turn while the device keeps sending."""
+    reads = 5
+    # like sock_recv with data waiting, these reads return without suspending
+    socket_connection_mock.return_value.read_bytes.side_effect = (
+        [b'{"a": 1}\r\n'] * reads + [b""]
+    )
+    conn = _Connection("1.2.3.4:23", "dev", Mock())
+    conn.state = ConnectionState.CONNECTED
+    turns = 0
+
+    async def other_task() -> None:
+        nonlocal turns
+        while True:
+            turns += 1
+            await asyncio.sleep(0)
+
+    task = asyncio.create_task(other_task())
+    await conn.run()
+    task.cancel()
+
+    assert turns >= reads
 
 
 @patch("pydeako.deako.utils._connection.asyncio")
