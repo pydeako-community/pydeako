@@ -265,11 +265,23 @@ def test_parse_data_skips_non_objects():
 
 
 def test_parse_data_skips_unparsable_values():
-    """Test huge numbers and deep nesting don't break the connection."""
+    """Test a number too long to convert doesn't break the connection."""
     huge_number = b'{"a": ' + b"9" * 5000 + b"}\r\n"
+
+    assert _parsed(huge_number, b'{"b": 2}\r\n') == [{"b": 2}]
+
+
+def test_parse_data_survives_deep_nesting():
+    """Test very deep nesting doesn't break the connection."""
     deep = b'{"a": ' + b"[" * 100_000 + b"]" * 100_000 + b"}\r\n"
 
-    assert _parsed(huge_number, deep, b'{"b": 2}\r\n') == [{"b": 2}]
+    delivered = _parsed(deep, b'{"b": 2}\r\n')
+
+    # Whether Python can parse this depth depends on the platform's stack
+    # (it raises RecursionError on macOS, parses on Linux); either way the
+    # next message must still arrive.
+    assert delivered[-1] == {"b": 2}
+    assert len(delivered) in (1, 2)
 
 
 def test_parse_data_back_to_back_messages():
