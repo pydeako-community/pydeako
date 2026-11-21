@@ -72,6 +72,8 @@ class _Connection:
         # Keeps a multi-byte character that is split between reads.
         self.utf8_decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.skipping_line = False
+        # Bad input is logged as a warning once, then at debug.
+        self.bad_input_logged = False
         self.socket = _SocketConnection(address, self.loop)
         self.tasks = set()
         self.init_run()
@@ -132,7 +134,7 @@ class _Connection:
                 next_message = _NEXT_MESSAGE.search(buffer)
                 if next_message is None:
                     break  # incomplete, wait for more data
-                _LOGGER.warning(
+                self._log_bad_input(
                     "Skipping invalid message from %s", self.format_name(),
                 )
                 buffer = buffer[next_message.start() + 1:]
@@ -141,12 +143,12 @@ class _Connection:
             if isinstance(message, dict):
                 self.on_data_callback(message)
             else:
-                _LOGGER.warning(
+                self._log_bad_input(
                     "Skipping non-object message from %s", self.format_name(),
                 )
 
         if len(buffer) > MAX_MESSAGE_LENGTH:
-            _LOGGER.warning(
+            self._log_bad_input(
                 "Dropping a message over %d characters from %s",
                 MAX_MESSAGE_LENGTH,
                 self.format_name(),
@@ -157,6 +159,12 @@ class _Connection:
             self.skipping_line = len(rest) > MAX_MESSAGE_LENGTH
             buffer = "" if self.skipping_line else rest
         self.message_buffer = buffer
+
+    def _log_bad_input(self, message: str, *args: object) -> None:
+        """Log bad input as a warning the first time, then at debug."""
+        level = logging.DEBUG if self.bad_input_logged else logging.WARNING
+        self.bad_input_logged = True
+        _LOGGER.log(level, message, *args)
 
     def init_run(self) -> None:
         """Init the run sequence and store run task."""

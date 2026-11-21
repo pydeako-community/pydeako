@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from uuid import uuid4
 from unittest.mock import AsyncMock, call, Mock, patch
 import pytest
@@ -295,6 +296,25 @@ def test_parse_data_drops_oversized_message():
     endless = [b'{"a": "' + b"x" * 2040] * 64  # 128 KiB, never closed
 
     assert _parsed(*endless, b'"}\r\n{"b": 2}\r\n') == [{"b": 2}]
+
+
+def test_parse_data_warns_once_about_bad_input(caplog):
+    """Test bad input is logged as a warning once, then at debug."""
+    bad_lines = b"7\n" * 50 + b"{\n" * 50
+    endless = [b'{"a": "' + b"x" * 2040] * 64  # 128 KiB, never closed
+
+    with caplog.at_level(logging.DEBUG, logger="pydeako"):
+        delivered = _parsed(bad_lines, *endless, b'"}\r\n{"b": 2}\r\n')
+
+    assert delivered == [{"b": 2}]
+    levels = [
+        record.levelno
+        for record in caplog.records
+        if record.getMessage().startswith(("Skipping", "Dropping"))
+    ]
+    assert len(levels) == 101  # 50 non-objects, 50 bad lines, 1 too long
+    assert levels[0] == logging.WARNING
+    assert levels.count(logging.WARNING) == 1
 
 
 @patch("pydeako.deako.utils._connection.asyncio")
