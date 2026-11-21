@@ -1,6 +1,8 @@
 """Tests _Connection."""
 
+import asyncio
 import json
+import logging
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import uuid4
 
@@ -307,6 +309,25 @@ def test_parse_data_drops_oversized_message():
     assert _parsed(*endless, b'"}\r\n{"b": 2}\r\n') == [{"b": 2}]
 
 
+def test_parse_data_warns_once_about_bad_input(caplog):
+    """Test bad input is logged as a warning once, then at debug."""
+    bad_lines = b"7\n" * 50 + b"{\n" * 50
+    endless = [b'{"a": "' + b"x" * 2040] * 64  # 128 KiB, never closed
+
+    with caplog.at_level(logging.DEBUG, logger="pydeako"):
+        delivered = _parsed(bad_lines, *endless, b'"}\r\n{"b": 2}\r\n')
+
+    assert delivered == [{"b": 2}]
+    levels = [
+        record.levelno
+        for record in caplog.records
+        if record.getMessage().startswith(("Skipping", "Dropping"))
+    ]
+    assert len(levels) == 101  # 50 non-objects, 50 bad lines, 1 too long
+    assert levels[0] == logging.WARNING
+    assert levels.count(logging.WARNING) == 1
+
+
 @patch("pydeako.deako.utils._connection.asyncio")
 @patch(
     "pydeako.deako.utils._connection._SocketConnection",
@@ -425,6 +446,7 @@ async def test_state_machine_read_failure(
     address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
+    asyncio_mock.sleep = AsyncMock()  # run() yields after each read
 
     conn = _Connection(address, name, Mock())
     conn.state = ConnectionState.CONNECTED
@@ -438,6 +460,33 @@ async def test_state_machine_read_failure(
     await conn.run()
 
     socket_connection_instance.close_socket.assert_called_once()
+
+
+@patch(
+    "pydeako.deako.utils._connection._SocketConnection", spec=_SocketConnection
+)
+@pytest.mark.asyncio
+async def test_state_machine_yields_between_reads(socket_connection_mock):
+    """Test other tasks get a turn while the device keeps sending."""
+    reads = 5
+    data = [b'{"a": 1}\r\n'] * reads + [b""]
+    # like sock_recv with data waiting, these reads return without suspending
+    socket_connection_mock.return_value.read_bytes.side_effect = data
+    conn = _Connection("1.2.3.4:23", "dev", Mock())
+    conn.state = ConnectionState.CONNECTED
+    turns = 0
+
+    async def other_task() -> None:
+        nonlocal turns
+        while True:
+            turns += 1
+            await asyncio.sleep(0)
+
+    task = asyncio.create_task(other_task())
+    await conn.run()
+    task.cancel()
+
+    assert turns >= reads
 
 
 @patch("pydeako.deako.utils._connection.asyncio")

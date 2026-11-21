@@ -71,6 +71,8 @@ class _Connection:
         # Keeps a multi-byte character that is split between reads.
         self.utf8_decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.skipping_line = False
+        # Bad input is logged as a warning once, then at debug.
+        self.bad_input_logged = False
         self.socket = _SocketConnection(address, self.loop)
         self.tasks = set()
 
@@ -136,7 +138,7 @@ class _Connection:
                 next_message = _NEXT_MESSAGE.search(buffer)
                 if next_message is None:
                     break  # incomplete, wait for more data
-                _LOGGER.warning(
+                self._log_bad_input(
                     "Skipping invalid message from %s",
                     self.format_name(),
                 )
@@ -146,13 +148,13 @@ class _Connection:
             if isinstance(message, dict):
                 self.on_data_callback(message)
             else:
-                _LOGGER.warning(
+                self._log_bad_input(
                     "Skipping non-object message from %s",
                     self.format_name(),
                 )
 
         if len(buffer) > MAX_MESSAGE_LENGTH:
-            _LOGGER.warning(
+            self._log_bad_input(
                 "Dropping a message over %d characters from %s",
                 MAX_MESSAGE_LENGTH,
                 self.format_name(),
@@ -163,6 +165,12 @@ class _Connection:
             self.skipping_line = len(rest) > MAX_MESSAGE_LENGTH
             buffer = "" if self.skipping_line else rest
         self.message_buffer = buffer
+
+    def _log_bad_input(self, message: str, *args: object) -> None:
+        """Log bad input as a warning the first time, then at debug."""
+        level = logging.DEBUG if self.bad_input_logged else logging.WARNING
+        self.bad_input_logged = True
+        _LOGGER.log(level, message, *args)
 
     def start(self) -> None:
         """Start the task that connects and reads messages."""
@@ -209,6 +217,9 @@ class _Connection:
             elif self.state == ConnectionState.CONNECTED:
                 try:
                     await self.read_socket()
+                    # A read returns without suspending while data is
+                    # waiting, so let other tasks run between reads.
+                    await asyncio.sleep(0)
                 # The run task must end through the CLOSED state, not
                 # with an exception nobody awaits.
                 # pylint: disable-next=broad-exception-caught
