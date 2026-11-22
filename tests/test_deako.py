@@ -475,7 +475,7 @@ async def test_get_dimmable(device_exists, dimmable):
 def test_update_state_dim_zero():
     """Test a dim of 0 is stored, not mistaken for 'no dim'."""
     deako = Deako(Mock())
-    deako.record_device("Lamp", "uuid", True, True, 40)
+    deako.record_device("Fake device 1", "uuid", True, True, 40)
 
     deako.update_state("uuid", True, 0)
 
@@ -485,7 +485,7 @@ def test_update_state_dim_zero():
 def test_update_state_without_dim_keeps_dim():
     """Test an event without dim keeps the last known dim."""
     deako = Deako(Mock())
-    deako.record_device("Lamp", "uuid", True, True, 40)
+    deako.record_device("Fake device 1", "uuid", True, True, 40)
 
     deako.update_state("uuid", False)
 
@@ -528,12 +528,12 @@ async def test_find_devices_invalid_count_raises_find_devices_error():
     "data",
     [
         {"name": 1, "uuid": "u", "state": {"power": True}},
-        {"name": "Lamp", "uuid": None, "state": {"power": True}},
-        {"name": "Lamp", "uuid": "u", "state": {"power": "on"}},
-        {"name": "Lamp", "uuid": "u", "state": {"power": 2}},
-        {"name": "Lamp", "uuid": "u", "state": "on"},
+        {"name": "Fake device 1", "uuid": None, "state": {"power": True}},
+        {"name": "Fake device 1", "uuid": "u", "state": {"power": "on"}},
+        {"name": "Fake device 1", "uuid": "u", "state": {"power": 2}},
+        {"name": "Fake device 1", "uuid": "u", "state": "on"},
         {
-            "name": "Lamp",
+            "name": "Fake device 1",
             "uuid": "u",
             "capabilities": 3,
             "state": {"power": True},
@@ -553,7 +553,7 @@ def test_incoming_json_device_found_invalid(data):
 def test_incoming_json_event_invalid_state(state):
     """Test an event with an invalid state doesn't change the device."""
     deako = Deako(Mock())
-    deako.record_device("Lamp", "u", True, False, 40)
+    deako.record_device("Fake device 1", "u", True, False, 40)
 
     deako.incoming_json(
         {"type": "EVENT", "data": {"target": "u", "state": state}},
@@ -572,7 +572,7 @@ def test_incoming_json_device_found_capped():
             {
                 "type": "DEVICE_FOUND",
                 "data": {
-                    "name": "Lamp",
+                    "name": "Fake device 1",
                     "uuid": f"u{i}",
                     "state": {"power": True},
                 },
@@ -603,7 +603,7 @@ def test_incoming_json_device_found_dim(dim, stored):
         {
             "type": "DEVICE_FOUND",
             "data": {
-                "name": "Lamp",
+                "name": "Fake device 1",
                 "uuid": "u",
                 "capabilities": "power+dim",
                 "state": {"power": True, "dim": dim},
@@ -628,7 +628,7 @@ def test_incoming_json_device_found_dim(dim, stored):
 def test_incoming_json_event_lenient_values(state, expected):
     """Test events with values Home Assistant or older firmware send."""
     deako = Deako(Mock())
-    deako.record_device("Lamp", "u", True, False, 40)
+    deako.record_device("Fake device 1", "u", True, False, 40)
 
     deako.incoming_json(
         {"type": "EVENT", "data": {"target": "u", "state": state}},

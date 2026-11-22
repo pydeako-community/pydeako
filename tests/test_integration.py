@@ -1,249 +1,39 @@
-"""
-End-to-end tests against a fake Deako Connect on 127.0.0.1.
-
-The fake speaks the local API
-(https://github.com/DeakoLights/local-integrations/blob/master/API.md):
-CRLF-delimited JSON, DEVICE_LIST followed by one DEVICE_FOUND per device,
-CONTROL answered with "ok" (or a DEVICE_BUSY error) and then a
-DEVICE_STATE_CHANGE event, and PING answered with PING.
-"""
+"""End-to-end tests of the client against the fake Deako Connect."""
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+import socket
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-import pytest_asyncio
 
-from pydeako.deako import Deako, _deako, _manager
+from pydeako import DevicesNotFoundError
+from pydeako.deako import Deako, FindDevicesError, _manager
 
-CRLF = b"\r\n"
+from .fake_bridge import CRLF, FakeDeakoConnect
+
 WAIT_S = 5
-
-
-class FakeDeakoConnect:
-    """A Deako Connect bridge listening on a loopback port."""
-
-    # pylint: disable=too-many-instance-attributes
-
-    def __init__(self, devices: dict[str, dict[str, Any]]) -> None:
-        """Set up the bridge with its devices; call start() to listen."""
-        self.devices = devices
-        self.received: list[dict[str, Any]] = []
-        self.raw_received = bytearray()
-        self.busy_replies = 0
-        self.response_delay_s = 0.0
-        self.outstanding = 0
-        self.max_outstanding = 0
-        self.writers: list[asyncio.StreamWriter] = []
-        self.connections = 0
-        self.client_closed = asyncio.Event()
-        self.server: asyncio.Server | None = None
-        self.port = 0
-
-    async def start(self) -> None:
-        """Start listening on a free loopback port."""
-        self.server = await asyncio.start_server(
-            self._handle,
-            "127.0.0.1",
-            0,
-        )
-        self.port = self.server.sockets[0].getsockname()[1]
-
-    async def stop(self) -> None:
-        """Close all clients and the server."""
-        self.drop_clients()
-        if self.server is not None:
-            self.server.close()
-            await self.server.wait_closed()
-
-    @property
-    def address(self) -> str:
-        """Address in the host:port form discovery returns."""
-        return f"127.0.0.1:{self.port}"
-
-    async def get_address(self) -> tuple[str, str]:
-        """Stand-in for DeakoDiscoverer.get_address."""
-        return self.address, "fake._deako._tcp.local."
-
-    def drop_clients(self) -> None:
-        """Close every client connection, like a bridge reboot."""
-        for writer in self.writers:
-            writer.close()
-        self.writers.clear()
-
-    async def send_raw(self, data: bytes) -> None:
-        """Send bytes as they are to every client."""
-        for writer in self.writers:
-            writer.write(data)
-            await writer.drain()
-
-    async def _send(
-        self,
-        writer: asyncio.StreamWriter,
-        message: dict[str, Any],
-    ) -> None:
-        writer.write(json.dumps(message, ensure_ascii=False).encode() + CRLF)
-        await writer.drain()
-
-    async def _broadcast(self, message: dict[str, Any]) -> None:
-        for writer in list(self.writers):
-            await self._send(writer, message)
-
-    async def _handle(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        self.connections += 1
-        self.writers.append(writer)
-        try:
-            while True:
-                line = await reader.readuntil(CRLF)
-                self.raw_received += line
-                request = json.loads(line)
-                self.received.append(request)
-                self.outstanding += 1
-                self.max_outstanding = max(
-                    self.max_outstanding,
-                    self.outstanding,
-                )
-                await asyncio.sleep(self.response_delay_s)
-                self.outstanding -= 1
-                await self._answer(writer, request)
-        except (asyncio.IncompleteReadError, ConnectionError):
-            self.client_closed.set()
-
-    async def _answer(
-        self,
-        writer: asyncio.StreamWriter,
-        request: dict[str, Any],
-    ) -> None:
-        base = {
-            "transactionId": request["transactionId"],
-            "type": request["type"],
-            "dst": request["src"],
-            "src": "deako",
-            "timestamp": 1,
-        }
-        if request["type"] == "PING":
-            await self._send(writer, {**base, "status": "ok"})
-        elif request["type"] == "DEVICE_LIST":
-            await self._send(
-                writer,
-                {
-                    **base,
-                    "status": "ok",
-                    "data": {"number_of_devices": len(self.devices)},
-                },
-            )
-            for uuid, device in self.devices.items():
-                await self._send(
-                    writer,
-                    {
-                        "type": "DEVICE_FOUND",
-                        "src": "deako",
-                        "data": {"uuid": uuid, **device},
-                    },
-                )
-        elif request["type"] == "CONTROL":
-            await self._answer_control(writer, base, request)
-
-    async def _answer_control(
-        self,
-        writer: asyncio.StreamWriter,
-        base: dict[str, Any],
-        request: dict[str, Any],
-    ) -> None:
-        if self.busy_replies:
-            self.busy_replies -= 1
-            await self._send(
-                writer,
-                {
-                    **base,
-                    "status": "error",
-                    "data": {
-                        "code": "DEVICE_BUSY",
-                        "message": "Device is busy",
-                    },
-                },
-            )
-            return
-        await self._send(writer, {**base, "status": "ok"})
-        target = request["data"]["target"]
-        self.devices[target]["state"].update(request["data"]["state"])
-        await self._broadcast(
-            {
-                "type": "EVENT",
-                "src": "deako",
-                "data": {
-                    "eventType": "DEVICE_STATE_CHANGE",
-                    "target": target,
-                    "state": dict(self.devices[target]["state"]),
-                },
-            }
-        )
-
-
-def _devices() -> dict[str, dict[str, Any]]:
-    return {
-        "uuid-1": {
-            "name": "Kitchen",
-            "capabilities": "power+dim",
-            "state": {"power": False, "dim": 40},
-        },
-        "uuid-2": {
-            "name": "Porch",
-            "capabilities": "power",
-            "state": {"power": True},
-        },
-        "uuid-3": {
-            "name": "Hall",
-            "capabilities": "power+dim",
-            "state": {"power": False, "dim": 100},
-        },
-    }
-
-
-@pytest.fixture(autouse=True)
-def _fast_polling(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Shorten the library's polling intervals so tests run quickly."""
-    monkeypatch.setattr(_manager, "CONNECTED_POLLING_INTERVAL_S", 0.01)
-    monkeypatch.setattr(_deako, "DEVICE_LIST_POLLING_INTERVAL_S", 0.01)
-    monkeypatch.setattr(_deako, "DEVICE_FOUND_POLLING_INTERVAL_S", 0.01)
-
-
-@pytest_asyncio.fixture(name="bridge")
-async def fixture_bridge() -> AsyncIterator[FakeDeakoConnect]:
-    """Start a fake bridge with three devices."""
-    fake = FakeDeakoConnect(_devices())
-    await fake.start()
-    yield fake
-    await fake.stop()
-
-
-@pytest_asyncio.fixture(name="client")
-async def fixture_client(
-    bridge: FakeDeakoConnect,
-) -> AsyncIterator[Deako]:
-    """Connect a Deako client to the fake bridge and find its devices."""
-    deako = Deako(bridge.get_address, client_name="tests")
-    await deako.connect()
-    await deako.find_devices()
-    yield deako
-    await deako.disconnect()
 
 
 async def _wait_for(event: asyncio.Event) -> None:
     await asyncio.wait_for(event.wait(), WAIT_S)
 
 
+async def _wait_until(condition: Callable[[], bool]) -> None:
+    """Poll until the condition holds; fail after WAIT_S."""
+    for _ in range(int(WAIT_S / 0.01)):
+        if condition():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condition not met in time")
+
+
 @pytest.mark.asyncio
 async def test_find_devices(client: Deako) -> None:
     """Test devices and their state are read from the bridge."""
     assert set(client.get_devices()) == {"uuid-1", "uuid-2", "uuid-3"}
-    assert client.get_name("uuid-1") == "Kitchen"
+    assert client.get_name("uuid-1") == "Fake device 1"
     assert client.is_dimmable("uuid-1") is True
     assert client.is_dimmable("uuid-2") is False
     assert client.get_state("uuid-1") == {"power": False, "dim": 40}
@@ -397,3 +187,280 @@ async def test_reconnects_after_the_bridge_drops_the_connection(
     await client.control_device("uuid-2", False)
     await _wait_for(updated)
     assert client.get_state("uuid-2") == {"power": False, "dim": None}
+
+
+@pytest.mark.asyncio
+async def test_ping_keeps_the_connection(
+    bridge: FakeDeakoConnect,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a bridge that answers pings is not reconnected to."""
+    monkeypatch.setattr(_manager, "PING_WORKER_WAIT_S", 0.02)
+    deako = Deako(bridge.get_address, client_name="tests")
+    await deako.connect()
+    try:
+        await _wait_until(lambda: len(bridge.requests("PING")) >= 3)
+    finally:
+        await deako.disconnect()
+
+    assert bridge.connections == 1
+    assert bridge.requests("PING")[0]["src"] == "tests"
+
+
+@pytest.mark.parametrize(
+    ("batch", "chunk_size"),
+    [(True, 0), (False, 7), (True, 7)],
+    ids=["one write", "split messages", "split stream"],
+)
+@pytest.mark.asyncio
+async def test_framing_does_not_depend_on_tcp_segments(
+    bridge: FakeDeakoConnect,
+    batch: bool,
+    chunk_size: int,
+) -> None:
+    """Test messages are read whether they arrive joined or in pieces."""
+    bridge.batch = batch
+    bridge.chunk_size = chunk_size
+    deako = Deako(bridge.get_address)
+    await deako.connect()
+    try:
+        await deako.find_devices()
+        updated = asyncio.Event()
+        deako.set_state_callback("uuid-3", updated.set)
+        await deako.control_device("uuid-3", True, 30)
+        await _wait_for(updated)
+    finally:
+        await deako.disconnect()
+
+    assert set(deako.get_devices()) == {"uuid-1", "uuid-2", "uuid-3"}
+    assert deako.get_state("uuid-3") == {"power": True, "dim": 30}
+
+
+@pytest.mark.asyncio
+async def test_event_from_the_bridge_updates_state(
+    bridge: FakeDeakoConnect,
+    client: Deako,
+) -> None:
+    """Test a change made at the wall switch reaches the callback."""
+    updated = asyncio.Event()
+    client.set_state_callback("uuid-1", updated.set)
+
+    await bridge.send_event("uuid-1", {"power": True, "dim": 15})
+    await _wait_for(updated)
+
+    assert client.get_state("uuid-1") == {"power": True, "dim": 15}
+
+
+@pytest.mark.asyncio
+async def test_garbage_does_not_block_later_messages(
+    bridge: FakeDeakoConnect,
+    client: Deako,
+) -> None:
+    """Test non-object JSON and input that isn't JSON are skipped."""
+    updated = asyncio.Event()
+    client.set_state_callback("uuid-2", updated.set)
+
+    await bridge.send_raw(b"[1, 2]\r\n\x00\xff not json\r\n")
+    await bridge.send_event("uuid-2", {"power": False})
+    await _wait_for(updated)
+
+    assert client.get_state("uuid-2") == {"power": False, "dim": None}
+
+
+@pytest.mark.asyncio
+async def test_find_devices_fails_on_a_bridge_without_devices(
+    bridge: FakeDeakoConnect,
+) -> None:
+    """Test an answer with no devices is reported like no answer at all."""
+    bridge.devices.clear()
+    deako = Deako(bridge.get_address)
+    await deako.connect()
+    try:
+        with pytest.raises(FindDevicesError, match="device list response"):
+            await deako.find_devices(timeout=0.05)
+    finally:
+        await deako.disconnect()
+
+    assert len(bridge.requests("DEVICE_LIST")) == 1
+    assert deako.get_devices() == {}
+
+
+@pytest.mark.asyncio
+async def test_silent_bridge_does_not_block_later_requests(
+    bridge: FakeDeakoConnect,
+    client: Deako,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a request the bridge never answers returns after the timeout."""
+    monkeypatch.setattr(_manager, "RESPONSE_TIMEOUT_S", 0.05)
+    bridge.silent = True
+
+    await asyncio.wait_for(client.control_device("uuid-1", True), WAIT_S)
+
+    assert client.get_state("uuid-1") == {"power": False, "dim": 40}
+    bridge.silent = False
+    updated = asyncio.Event()
+    client.set_state_callback("uuid-1", updated.set)
+    await client.control_device("uuid-1", True)
+    await _wait_for(updated)
+    assert client.get_state("uuid-1") == {"power": True, "dim": 40}
+
+
+@pytest.mark.asyncio
+async def test_unknown_device_error_is_not_retried(
+    bridge: FakeDeakoConnect,
+    client: Deako,
+) -> None:
+    """Test an error other than DEVICE_BUSY is not sent again."""
+    await client.control_device("no-such-device", True)
+
+    assert len(bridge.requests("CONTROL")) == 1
+
+
+@pytest.mark.asyncio
+async def test_float_dim_is_sent_as_an_int(
+    bridge: FakeDeakoConnect,
+    client: Deako,
+) -> None:
+    """Test a float dim level, as Home Assistant passes, goes out as int."""
+    dim: Any = 50.0
+
+    await client.control_device("uuid-1", True, dim)
+
+    state = bridge.requests("CONTROL")[-1]["data"]["state"]
+    assert state == {"power": True, "dim": 50}
+    assert isinstance(state["dim"], int)
+
+
+@pytest.mark.asyncio
+async def test_connects_to_the_next_address_when_one_refuses(
+    bridge: FakeDeakoConnect,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a refused address is followed by the next one discovery gives."""
+    monkeypatch.setattr(_manager, "CONNECTION_TIMEOUT_S", 0.05)
+    with socket.socket() as unused:
+        unused.bind(("127.0.0.1", 0))
+        refusing = f"127.0.0.1:{unused.getsockname()[1]}"
+    addresses = [refusing, bridge.address]
+
+    async def get_address() -> tuple[str, str]:
+        address = addresses.pop(0) if len(addresses) > 1 else addresses[0]
+        return address, "fake._deako._tcp.local."
+
+    deako = Deako(get_address)
+    manager = deako.connection_manager
+    await deako.connect()
+    try:
+        assert manager.connection is None
+        await _wait_until(
+            lambda: (
+                manager.connection is not None
+                and manager.connection.is_connected()
+            )
+        )
+        await deako.find_devices()
+    finally:
+        await deako.disconnect()
+
+    assert bridge.connections == 1
+    assert set(deako.get_devices()) == {"uuid-1", "uuid-2", "uuid-3"}
+
+
+@pytest.mark.asyncio
+async def test_find_devices_again_updates_devices_and_keeps_callbacks(
+    bridge: FakeDeakoConnect,
+    client: Deako,
+) -> None:
+    """Test asking for the device list again refreshes what is stored."""
+    updated = asyncio.Event()
+    client.set_state_callback("uuid-1", updated.set)
+    bridge.devices["uuid-1"]["name"] = "Fake device 1 renamed"
+    bridge.devices["uuid-1"]["state"] = {"power": True, "dim": 80}
+
+    await client.find_devices()
+    await _wait_until(
+        lambda: client.get_name("uuid-1") == "Fake device 1 renamed"
+    )
+
+    assert client.get_state("uuid-1") == {"power": True, "dim": 80}
+    await bridge.send_event("uuid-1", {"power": False})
+    await _wait_for(updated)
+
+
+@pytest.mark.asyncio
+async def test_disconnect_stops_looking_for_a_bridge() -> None:
+    """Test disconnect cancels the retries started when none was found."""
+    calls = 0
+
+    async def get_address() -> tuple[str, str]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise DevicesNotFoundError()
+        await asyncio.Event().wait()  # the retry keeps waiting
+        raise AssertionError("unreachable")
+
+    deako = Deako(get_address)
+    await deako.connect()
+    await _wait_until(lambda: calls == 2)
+    retries = set(deako.connection_manager.tasks)
+
+    await deako.disconnect()
+    await asyncio.gather(*retries, return_exceptions=True)
+
+    assert retries
+    assert all(task.cancelled() for task in retries)
+    assert calls == 2
+
+
+@pytest.mark.xfail(
+    raises=AssertionError,
+    reason="a second connect() leaves the first connection open",
+)
+@pytest.mark.asyncio
+async def test_second_connect_keeps_one_connection(
+    bridge: FakeDeakoConnect,
+) -> None:
+    """Test calling connect again doesn't leave an extra connection open."""
+    deako = Deako(bridge.get_address)
+    await deako.connect()
+    first = deako.connection_manager.connection
+    assert first is not None
+    await deako.connect()
+    try:
+        assert (
+            deako.connection_manager.connection is first
+            or not first.is_connected()
+        )
+    finally:
+        await deako.disconnect()
+        first.close()
+
+
+@pytest.mark.xfail(
+    raises=AssertionError,
+    reason="disconnect() during connect() doesn't stop the retries",
+)
+@pytest.mark.asyncio
+async def test_disconnect_during_connect_stops_retrying() -> None:
+    """Test disconnect ends the retries of a connect still in progress."""
+    calls = 0
+
+    async def get_address() -> tuple[str, str]:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.01)  # discovery waiting for a device
+        raise DevicesNotFoundError()
+
+    deako = Deako(get_address)
+    connecting = asyncio.create_task(deako.connect())
+    await asyncio.sleep(0)
+    await deako.disconnect()
+    await connecting
+    try:
+        calls_at_disconnect = calls
+        await asyncio.sleep(0.1)
+        assert calls == calls_at_disconnect
+    finally:
+        await deako.disconnect()

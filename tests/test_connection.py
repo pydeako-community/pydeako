@@ -243,11 +243,13 @@ def _parsed(*chunks: bytes) -> list[object]:
 
 def test_parse_data_utf8_split_across_reads():
     """Test a multi-byte character split between two reads."""
-    message = json.dumps({"name": "Café"}, ensure_ascii=False).encode()
+    message = json.dumps(
+        {"name": "Fake device é"}, ensure_ascii=False
+    ).encode()
     cut = message.index("é".encode()) + 1
 
     assert _parsed(message[:cut], message[cut:] + b"\r\n") == [
-        {"name": "Café"},
+        {"name": "Fake device é"},
     ]
 
 
@@ -557,3 +559,22 @@ async def test_state_machine_unknown_state_raises(
 
     with pytest.raises(UnknownStateError):
         await conn.run()
+
+
+@patch(
+    "pydeako.deako.utils._connection._SocketConnection", spec=_SocketConnection
+)
+@pytest.mark.asyncio
+async def test_state_machine_callback_error_closes(socket_connection_mock):
+    """Test _Connection.run closes when handling a message raises."""
+    on_data = Mock(side_effect=RuntimeError("boom"))
+    socket_connection_instance = socket_connection_mock.return_value
+    socket_connection_instance.read_bytes.return_value = b'{"type": "X"}\r\n'
+    conn = _Connection("1.2.3.4:23", "dev", on_data)
+    conn.state = ConnectionState.CONNECTED
+
+    await conn.run()
+
+    on_data.assert_called_once_with({"type": "X"})
+    assert conn.state == ConnectionState.CLOSED
+    socket_connection_instance.close_socket.assert_called_once()

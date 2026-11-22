@@ -250,3 +250,28 @@ async def test_deako_discoverer_get_address_removed_meanwhile(
     ):
         await discoverer.get_address()
     service_browser_init.assert_called_once()
+
+
+def test_listener_ignores_unresolved_service():
+    """Test add and update do nothing when the service can't be resolved."""
+    add_callback = Mock()
+    zc_mock = Mock(Zeroconf)
+    zc_mock.get_service_info.return_value = None
+    listener = DeakoListener(add_callback, Mock())
+
+    listener.add_service(zc_mock, "type", "name")
+    listener.update_service(zc_mock, "type", "name")
+
+    assert zc_mock.get_service_info.call_count == 2
+    add_callback.assert_not_called()
+
+
+@patch("pydeako.discover._discover.ServiceBrowser.__init__")
+def test_deako_discoverer_stop(mock_service_browser_init):
+    """Test DeakoDiscoverer.stop closes the zeroconf instance it uses."""
+    zc_mock = Mock(Zeroconf)
+
+    DeakoDiscoverer(zc_mock).stop()
+
+    mock_service_browser_init.assert_called_once()
+    zc_mock.close.assert_called_once_with()

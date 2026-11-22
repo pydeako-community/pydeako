@@ -71,7 +71,8 @@ if __name__ == "__main__":
 2. `ruff format --check pydeako tests`
 3. `pylint pydeako tests`
 4. `mypy pydeako tests`
-5. `pytest`
+5. `coverage run -m pytest`
+6. `coverage report` (fails below 100%)
 
 ## License
 

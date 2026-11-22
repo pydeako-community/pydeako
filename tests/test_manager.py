@@ -644,3 +644,19 @@ async def test_init_connection_connected_at_deadline(
     worker_mock.assert_called_once()
     assert sleep_mock.await_count == CONNECTION_TIMEOUT_S
     assert manager.connection is connection_mock.return_value
+
+
+@patch("pydeako.deako._manager.CONNECTION_RETRY_DELAY_S", 0)
+@pytest.mark.asyncio
+async def test_background_connect_error_not_retried_when_closed():
+    """Test a closed manager doesn't retry a failed background connect."""
+    get_address = AsyncMock(side_effect=RuntimeError("boom"))
+    manager = _Manager(get_address, Mock())
+    manager.state.canceled = True
+
+    manager.create_connection_task()
+    for _ in range(10):
+        await asyncio.sleep(0.01)
+
+    assert get_address.await_count == 1
+    assert not manager.tasks

@@ -59,6 +59,16 @@ disallow_incomplete_defs = false
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 filterwarnings = ["error"]
+strict = true
+
+[tool.coverage.run]
+branch = true
+source = ["pydeako"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 79

@@ -33,7 +33,8 @@ jobs:
       - run: ruff format --check pydeako tests
       - run: pylint pydeako tests
       - run: mypy pydeako tests
-      - run: pytest
+      - run: coverage run -m pytest
+      - run: coverage report
 
   build:
     name: Build distributions

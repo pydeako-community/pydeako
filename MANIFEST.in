@@ -1,0 +1,3 @@
+graft tests
+include requirements.txt requirements_test.txt
+global-exclude __pycache__ *.py[cod]

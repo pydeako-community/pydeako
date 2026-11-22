@@ -1,0 +1,69 @@
+{
+  "about": "Messages exchanged with a real Deako Connect (firmware 3.21.9, API 1), recorded on 2026-11-22 through the library's debug log. Device names, uuids, transaction ids and timestamps are replaced. Each 'received' entry is one read from the socket.",
+  "messages": [
+    {
+      "direction": "sent",
+      "data": "{\"transactionId\": \"10000000-0000-4000-8000-000000000001\", \"dst\": \"deako\", \"src\": \"pydeako_default\", \"type\": \"DEVICE_LIST\"}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"DEVICE_LIST\",\"transactionId\":\"10000000-0000-4000-8000-000000000001\",\"dst\":\"pydeako_default\",\"src\":\"deako\",\"status\":\"ok\",\"timestamp\":1700000000,\"data\":{\"number_of_devices\":7}}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 1\",\"uuid\":\"00000000-0000-4000-8000-000000000001\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 2\",\"uuid\":\"00000000-0000-4000-8000-000000000002\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 3\",\"uuid\":\"00000000-0000-4000-8000-000000000003\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 4\",\"uuid\":\"00000000-0000-4000-8000-000000000004\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 5\",\"uuid\":\"00000000-0000-4000-8000-000000000005\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 6\",\"uuid\":\"00000000-0000-4000-8000-000000000006\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n{\"type\":\"DEVICE_FOUND\",\"src\":\"deako\",\"timestamp\":1700000000,\"data\":{\"name\":\"Fake device 7\",\"uuid\":\"00000000-0000-4000-8000-000000000007\",\"capabilities\":\"power\",\"state\":{\"power\":false}}}\r\n"
+    },
+    {
+      "direction": "sent",
+      "data": "{\"transactionId\": \"10000000-0000-4000-8000-000000000002\", \"dst\": \"deako\", \"src\": \"pydeako_default\", \"type\": \"CONTROL\", \"data\": {\"target\": \"00000000-0000-4000-8000-000000000001\", \"state\": {\"power\": true}}}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"CONTROL\",\"transactionId\":\"10000000-0000-4000-8000-000000000002\",\"dst\":\"pydeako_default\",\"src\":\"deako\",\"status\":\"ok\",\"timestamp\":1700000008}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"EVENT\",\"src\":\"deako\",\"timestamp\":1700000009,\"data\":{\"eventType\":\"DEVICE_STATE_CHANGE\",\"target\":\"00000000-0000-4000-8000-000000000001\",\"state\":{\"power\":true}}}\r\n"
+    },
+    {
+      "direction": "sent",
+      "data": "{\"transactionId\": \"10000000-0000-4000-8000-000000000003\", \"dst\": \"deako\", \"src\": \"pydeako_default\", \"type\": \"PING\"}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"PING\",\"transactionId\":\"10000000-0000-4000-8000-000000000003\",\"dst\":\"pydeako_default\",\"src\":\"deako\",\"status\":\"ok\",\"timestamp\":1700000010}\r\n"
+    },
+    {
+      "direction": "sent",
+      "data": "{\"transactionId\": \"10000000-0000-4000-8000-000000000004\", \"dst\": \"deako\", \"src\": \"pydeako_default\", \"type\": \"CONTROL\", \"data\": {\"target\": \"00000000-0000-4000-8000-000000000001\", \"state\": {\"power\": false}}}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"CONTROL\",\"transactionId\":\"10000000-0000-4000-8000-000000000004\",\"dst\":\"pydeako_default\",\"src\":\"deako\",\"status\":\"ok\",\"timestamp\":1700000014}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"EVENT\",\"src\":\"deako\",\"timestamp\":1700000015,\"data\":{\"eventType\":\"DEVICE_STATE_CHANGE\",\"target\":\"00000000-0000-4000-8000-000000000001\",\"state\":{\"power\":false}}}\r\n"
+    },
+    {
+      "direction": "sent",
+      "data": "{\"transactionId\": \"10000000-0000-4000-8000-000000000005\", \"dst\": \"deako\", \"src\": \"pydeako_default\", \"type\": \"PING\"}\r\n"
+    },
+    {
+      "direction": "received",
+      "data": "{\"type\":\"PING\",\"transactionId\":\"10000000-0000-4000-8000-000000000005\",\"dst\":\"pydeako_default\",\"src\":\"deako\",\"status\":\"ok\",\"timestamp\":1700000020}\r\n"
+    }
+  ]
+}
