@@ -279,7 +279,7 @@ class _Manager:
         try:
             await connection.send_data(req.get_body_str())
             return await asyncio.wait_for(response, RESPONSE_TIMEOUT_S)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.debug("No response to request %s", transaction_id)
             return None
         finally:

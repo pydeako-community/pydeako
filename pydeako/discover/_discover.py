@@ -32,13 +32,19 @@ DevicesNotFoundException = DevicesNotFoundError
 
 
 class DeakoDiscoverer(ServiceBrowser):
-    """Zeroconf browser with stored addresses."""
+    """
+    Browse for Deako devices with zeroconf and keep their addresses.
+
+    Browsing starts when the object is created and runs on its own
+    thread. cancel() ends it and waits for that thread, so asyncio code
+    should run it with asyncio.to_thread.
+    """
 
     address_pool: _AddressPool
     zeroconf: Zeroconf
 
     def __init__(self, zeroconf: Zeroconf | None = None) -> None:
-        """Initialize Deako mdns discovery."""
+        """Start browsing, on the given zeroconf or on a new instance."""
         self.zeroconf = zeroconf or Zeroconf()
         self.address_pool = _AddressPool()
         # Note that this begins discovering on init
@@ -53,9 +59,11 @@ class DeakoDiscoverer(ServiceBrowser):
 
     async def get_address(self) -> tuple[str, str]:
         """
-        Get an address from the pool of available addresses.
+        Get the address and service name of a discovered device.
 
-        Waits up to TIMEOUT_S for a device to be discovered.
+        The address is "host:port". With several addresses, each call
+        returns the next one. Waits up to TIMEOUT_S for a device and
+        raises DevicesNotFoundError if none is discovered.
         """
         total_time = 0.0
         while (
@@ -72,7 +80,12 @@ class DeakoDiscoverer(ServiceBrowser):
         return address, name
 
     def stop(self) -> None:
-        """Stop using zeroconf."""
+        """
+        Close the zeroconf instance.
+
+        Don't call this on a shared instance, such as Home Assistant's.
+        The browser thread keeps running; cancel() ends it.
+        """
         self.zeroconf.close()
 
 
@@ -89,7 +102,7 @@ class DeakoListener(ServiceListener):
         self.device_removed_callback = device_removed_callback
 
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        """Add services associated with service."""
+        """Add the addresses of a newly discovered service."""
         _LOGGER.debug("Add service with address type %s, name %s", type_, name)
         addresses = self.__get_addresses(zc, type_, name)
         if addresses:
@@ -112,7 +125,7 @@ class DeakoListener(ServiceListener):
         self.device_removed_callback(name)
 
     def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        """Update service."""
+        """Replace the addresses of a service that changed."""
         _LOGGER.debug(
             "Update for service with address type %s, name %s",
             type_,

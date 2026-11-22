@@ -1,0 +1,35 @@
+name: Bug in the pydeako library
+description: Something in the library fails or behaves wrongly.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: pydeako-community version
+      placeholder: "0.7.0"
+    validations:
+      required: true
+  - type: input
+    id: usage
+    attributes:
+      label: How you use it
+      description: Home Assistant (with its version) or your own code (with the Python version).
+      placeholder: Home Assistant 2026.12.0
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Debug logs from the `pydeako` logger around the time of the problem.
+        In Home Assistant, turn on debug logging on the Deako integration
+        page. Remove device names and addresses you don't want to share.
+      render: text

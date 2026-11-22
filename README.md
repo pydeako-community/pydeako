@@ -1,78 +1,108 @@
 # pydeako
 
-## Description
-
-`pydeako` is a Python library for discovering, connecting to, and interacting with Deako smart devices on the local network.
+`pydeako` is a Python library for discovering, connecting to, and controlling Deako smart switches and dimmers on the local network. It talks to a Deako Connect over the [Deako local API](https://github.com/pydeako-community/pydeako/blob/main/docs/local-api.md), and the [Home Assistant Deako integration](https://www.home-assistant.io/integrations/deako) is built on it.
 
 This is the community-maintained continuation of [DeakoLights/pydeako](https://github.com/DeakoLights/pydeako), published on PyPI as `pydeako-community`. The import name is still `pydeako`.
 
 ## Installation
 
-`pip install pydeako-community`
+```sh
+pip install pydeako-community
+```
+
+It needs Python 3.11 or newer.
 
 ## Usage
 
-### `pydeako` mdns discovery client
+### Find a device
 
-```
+```python
 import asyncio
-from pydeako import discover
 
-async def _discover():
-    d = discover.DeakoDiscoverer()
+from pydeako import DeakoDiscoverer, DevicesNotFoundError
+
+
+async def main() -> None:
+    discoverer = DeakoDiscoverer()
     try:
-        address = await d.get_address()
-        print(f"Found deako device at {address}!")
-    except discover.DevicesNotFoundError:
-        print("No devices found!")
-        pass
+        address, name = await discoverer.get_address()
+    except DevicesNotFoundError:
+        print("No Deako device found")
+    else:
+        print(f"Found {name} at {address}")
+
 
 if __name__ == "__main__":
-    asyncio.run(_discover())
+    asyncio.run(main())
 ```
 
-### `pydeako` socket client
+### Control devices
 
-```
+```python
 import asyncio
-from pydeako import deako, discover
 
-async def _discover():
-    client_name = "MyClient"
-    d = discover.DeakoDiscoverer()
-    deako_client = deako.Deako(d.get_address, client_name=client_name)
+from pydeako import Deako, DeakoDiscoverer, FindDevicesError
 
-    await deako_client.connect()
-    await deako_client.find_devices()
 
-    devices = deako_client.get_devices()
+async def main() -> None:
+    discoverer = DeakoDiscoverer()
+    client = Deako(discoverer.get_address, client_name="my-app")
+    await client.connect()
+    try:
+        await client.find_devices()
+        for uuid, device in client.get_devices().items():
+            print(uuid, device["name"], device["state"])
 
-    # turn on all devices
-    for uuid in devices:
-        await deako_client.control_device(uuid, True)
+        # Turn the first device on; a dimmer goes to 50%.
+        uuid = next(iter(client.get_devices()))
+        changed = asyncio.Event()
+        client.set_state_callback(uuid, changed.set)
+        dim = 50 if client.is_dimmable(uuid) else None
+        await client.control_device(uuid, True, dim)
+        # The new state arrives as an event from the device.
+        await asyncio.wait_for(changed.wait(), timeout=5)
+        print(client.get_name(uuid), client.get_state(uuid))
+    except FindDevicesError as error:
+        print(error)
+    finally:
+        await client.disconnect()
+
 
 if __name__ == "__main__":
-    asyncio.run(_discover())
+    asyncio.run(main())
 ```
+
+Discovery is optional. `Deako` takes any coroutine function that returns `(address, name)`, with the address as `"host:port"`. The local API listens on port 23.
+
+```python
+async def get_address() -> tuple[str, str]:
+    return "192.0.2.10:23", "my-bridge"
+```
+
+## API
+
+| Call | Notes |
+| --- | --- |
+| `DeakoDiscoverer(zeroconf=None)` | Browses for `_deako._tcp.local.` on a thread, using your `Zeroconf` instance or a new one. |
+| `await discoverer.get_address()` | Returns `(address, name)`. Waits up to 10 s, then raises `DevicesNotFoundError`. |
+| `Deako(get_address, client_name=None)` | The client. Nothing is sent until `connect()`. |
+| `await client.connect()` | Connects. If no device answers, it returns and keeps trying in the background. |
+| `await client.find_devices(timeout=10)` | Loads the devices. Raises `FindDevicesError` if they don't arrive. |
+| `client.get_devices()` | `{uuid: {"name", "uuid", "dimmable", "state": {"power", "dim"}}}` |
+| `client.get_name(uuid)`, `client.get_state(uuid)`, `client.is_dimmable(uuid)` | Return `None` for an unknown uuid. |
+| `client.set_state_callback(uuid, callback)` | One callback per device, called without arguments on the event loop. |
+| `await client.control_device(uuid, power, dim=None)` | `dim` is 0 to 100. It doesn't raise; the new state arrives as an event. |
+| `await client.disconnect()` | Closes the connection and stops reconnecting. |
+
+The client sends one request at a time, waits up to 1 s for each answer and retries a `DEVICE_BUSY` answer three times. It pings the device every 10 s and reconnects when no answer comes back.
+
+To stop discovery in a long-running program, call `await asyncio.to_thread(discoverer.cancel)`. `discoverer.stop()` closes the Zeroconf instance, so don't call it on one you share with other code.
+
+Log messages go to the `pydeako.deako`, `pydeako.deako.utils` and `pydeako.discover` loggers.
 
 ## Contributing
 
-### Dev environment setup
-
-1. Use Python 3.11–3.14
-2. `python -m venv venv`
-3. `source venv/bin/activate`
-4. `pip install -r requirements.txt`
-5. `pip install -r requirements_test.txt`
-
-### Checks
-
-1. `ruff check pydeako tests`
-2. `ruff format --check pydeako tests`
-3. `pylint pydeako tests`
-4. `mypy pydeako tests`
-5. `coverage run -m pytest`
-6. `coverage report` (fails below 100%)
+See [CONTRIBUTING.md](https://github.com/pydeako-community/pydeako/blob/main/CONTRIBUTING.md) for the setup, the checks and how releases are made. The tests need no Deako hardware: they run against a fake device on 127.0.0.1.
 
 ## License
 
@@ -82,6 +112,6 @@ MIT License, see LICENSE.txt
 
 Deako published and maintained `pydeako` until release 0.6.0 (December 2024). The repository has had no activity since then. Its only contributor [no longer maintains anything related to Deako](https://github.com/DeakoLights/pydeako/pull/5#issuecomment-6393009318) and [suggested continuing it as a fork](https://github.com/DeakoLights/pydeako/pull/5#issuecomment-6402937827). Deako didn't answer a request to software@deako.com about maintainership.
 
-This fork keeps the full history of the original project. Release 0.6.1 contains the same library code as `pydeako` 0.6.0, repackaged and published from GitHub Actions. Fixes land in later releases.
+This fork keeps the full history of the original project. Release 0.6.1 has the same library code as `pydeako` 0.6.0, repackaged and published from GitHub Actions. Later releases contain fixes; the [release notes](https://github.com/pydeako-community/pydeako/releases) list them.
 
 Bugs in the Home Assistant Deako integration go to [Home Assistant Core](https://github.com/home-assistant/core/issues); bugs in this library go [here](https://github.com/pydeako-community/pydeako/issues).

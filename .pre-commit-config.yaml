@@ -1,0 +1,32 @@
+# Runs the tools pinned in requirements_test.txt from the active venv.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --check
+        language: system
+        types: [python]
+      - id: pylint
+        name: pylint
+        entry: pylint pydeako tests
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: mypy
+        name: mypy
+        entry: mypy pydeako tests
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: tests
+        name: tests with coverage
+        entry: sh -c "coverage run -m pytest -q && coverage report"
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

@@ -1,4 +1,4 @@
-"""Connection over socket."""
+"""Deako client: tracks devices and sends them control requests."""
 
 import asyncio
 import logging
@@ -77,7 +77,13 @@ def _parse_state(state: object) -> tuple[bool, int | None] | None:
 
 
 class Deako:
-    """Deako specific socket api."""
+    """
+    Client for the Deako local API.
+
+    Keeps the devices the Deako Connect reports, with their state, and
+    sends control requests. State changes arrive as events and are passed
+    on through the callbacks set with set_state_callback.
+    """
 
     connection_manager: _Manager
     devices: dict[str, Any]
@@ -88,7 +94,13 @@ class Deako:
         get_address: Callable[[], Awaitable[tuple[str, str]]],
         client_name: str | None = None,
     ) -> None:
-        """Init manager for Deako local integration."""
+        """
+        Set up the client; nothing is sent until connect() is called.
+
+        get_address returns the (address, name) of a device to connect to,
+        the address as "host:port", like DeakoDiscoverer.get_address does.
+        client_name is sent as the source of every request.
+        """
         self.connection_manager = _Manager(
             get_address,
             self.incoming_json,
@@ -118,7 +130,12 @@ class Deako:
     def set_state_callback(
         self, uuid: str, callback: Callable[[], None]
     ) -> None:
-        """Add a state update listener."""
+        """
+        Call callback, without arguments, when the device's state changes.
+
+        A device has one callback; setting another replaces it. Unknown
+        uuids are ignored.
+        """
         if uuid in self.devices:
             self.devices[uuid]["callback"] = callback
 
@@ -209,22 +226,40 @@ class Deako:
         self.devices[uuid]["state"]["dim"] = dim
 
     async def connect(self) -> None:
-        """Initiate the connection sequence."""
+        """
+        Connect to a device from get_address.
+
+        Returns without a connection when no device is found or it doesn't
+        answer in time; the client then keeps trying in the background.
+        A connection that stops answering pings is replaced.
+        """
         await self.connection_manager.init_connection()
 
     async def disconnect(self) -> None:
-        """Close the connection."""
+        """Close the connection and stop reconnecting."""
         self.connection_manager.close()
 
     def get_devices(self) -> dict[str, Any]:
-        """Get the devices that have been recorded."""
+        """
+        Get the devices found so far, by uuid.
+
+        Each device is a dict with "name", "uuid", "dimmable" and "state";
+        the state holds "power" and "dim" (0 to 100, or None).
+        """
         return self.devices
 
     async def find_devices(
         self,
         timeout: float = DEFAULT_DEVICE_LIST_TIMEOUT_S,
     ) -> None:
-        """Request the device list."""
+        """
+        Ask for the device list and wait until every device has arrived.
+
+        timeout is how long to wait for the first answer, in seconds.
+        Raises FindDevicesError when the request can't be sent, no answer
+        comes in time, or fewer devices arrive than announced. A list
+        without devices counts as no answer.
+        """
         _LOGGER.info("Finding devices")
         success = await self.connection_manager.send_get_device_list()
         if not success:
@@ -239,7 +274,7 @@ class Deako:
             await asyncio.sleep(DEVICE_LIST_POLLING_INTERVAL_S)
             remaining -= DEVICE_LIST_POLLING_INTERVAL_S
 
-        # if we get a response, expected_devices will be at least 1
+        # still 0: no answer, or a list without devices
         if self.expected_devices == 0:
             raise FindDevicesError(
                 "Timed out waiting for device list response",
@@ -274,12 +309,14 @@ class Deako:
         """
         Ask the device to change its state.
 
-        The new state arrives later as an EVENT from the bridge.
+        dim is a level from 0 to 100. The new state arrives later as an
+        EVENT from the bridge. A request that can't be sent or isn't
+        acknowledged is logged, not raised.
         """
         await self.connection_manager.send_state_change(uuid, power, dim)
 
     def get_name(self, uuid: str) -> str | None:
-        """Get a device's name by uuid."""
+        """Get a device's name by uuid, or None if it is unknown."""
         device_data = self.devices.get(uuid)
         if device_data is None:
             return None
@@ -289,7 +326,11 @@ class Deako:
         return name
 
     def get_state(self, uuid: str) -> dict[str, Any] | None:
-        """Get a device's state by uuid."""
+        """
+        Get a device's state by uuid, or None if it is unknown.
+
+        The state is {"power": bool, "dim": int | None}.
+        """
         device_data = self.devices.get(uuid)
         if device_data is None:
             return None
@@ -299,7 +340,7 @@ class Deako:
         return state
 
     def is_dimmable(self, uuid: str) -> bool | None:
-        """Get whether a device is dimmable by uuid."""
+        """Get whether a device is dimmable, or None if it is unknown."""
         device_data = self.devices.get(uuid)
         if device_data is None:
             return None
