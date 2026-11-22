@@ -71,10 +71,8 @@ async def test_init_connection_get_address_no_devices(
 
 @patch("pydeako.deako._manager._Manager.create_connection_task")
 @patch("pydeako.deako._manager._Connection")
-@patch("pydeako.deako._manager.asyncio", autospec=True)
 @pytest.mark.asyncio
 async def test_init_connection_timeout_connecting(
-    asyncio_mock,
     connection_mock,
     create_connection_mock,
 ):
@@ -86,7 +84,7 @@ async def test_init_connection_timeout_connecting(
 
     get_address.return_value = address, name
     connection_mock_instance = connection_mock.return_value
-    connection_mock_instance.is_connected.return_value = False
+    connection_mock_instance.wait_connected = AsyncMock(return_value=False)
 
     await manager.init_connection()
 
@@ -96,7 +94,11 @@ async def test_init_connection_timeout_connecting(
         manager.incoming_json,
     )
 
-    assert asyncio_mock.sleep.call_count == CONNECTION_TIMEOUT_S
+    connection_mock_instance.wait_connected.assert_awaited_once_with(
+        CONNECTION_TIMEOUT_S
+    )
+    connection_mock_instance.close.assert_called_once()
+    assert manager.connection is None
 
     create_connection_mock.assert_called_once()  # this is the retry
 
@@ -121,7 +123,7 @@ async def test_init_connection(
 
     get_address.return_value = address, name
     connection_mock_instance = connection_mock.return_value
-    connection_mock_instance.is_connected.return_value = True
+    connection_mock_instance.wait_connected = AsyncMock(return_value=True)
 
     await manager.init_connection()
 
@@ -238,6 +240,7 @@ def test_incoming_json():
     assert manager.pong_received is False
 
 
+@patch("pydeako.deako._manager.RESPONSE_TIMEOUT_S", 0.01)
 @patch("pydeako.deako._manager._Request")
 @patch("pydeako.deako._manager.device_list_request")
 @pytest.mark.asyncio
@@ -546,12 +549,16 @@ async def test_init_connection_unexpected_error_allows_retry():
     assert get_address.await_count == 2
 
 
-@patch("pydeako.deako._manager.CONNECTED_POLLING_INTERVAL_S", 0.01)
 @patch("pydeako.deako._manager._Connection")
 @pytest.mark.asyncio
 async def test_init_connection_cancelled_closes_connection(connection_mock):
     """Test cancelling while waiting to connect closes the connection."""
-    connection_mock.return_value.is_connected.return_value = False
+
+    async def never_connects(_timeout: float) -> bool:
+        await asyncio.Event().wait()
+        return True
+
+    connection_mock.return_value.wait_connected = never_connects
     manager = _Manager(AsyncMock(return_value=("1.2.3.4:23", "dev")), Mock())
     task = asyncio.create_task(manager.init_connection())
     await asyncio.sleep(0.05)
@@ -565,13 +572,12 @@ async def test_init_connection_cancelled_closes_connection(connection_mock):
 
 
 @patch("pydeako.deako._manager.CONNECTION_RETRY_DELAY_S", 0)
-@patch("pydeako.deako._manager.CONNECTED_POLLING_INTERVAL_S", 0.01)
 @patch("pydeako.deako._manager._Manager.maintain_connection_worker")
 @patch("pydeako.deako._manager._Connection")
 @pytest.mark.asyncio
 async def test_background_connect_error_retries(connection_mock, worker_mock):
     """Test an unexpected error in a background connect is retried."""
-    connection_mock.return_value.is_connected.return_value = True
+    connection_mock.return_value.wait_connected = AsyncMock(return_value=True)
     get_address = AsyncMock(
         side_effect=[RuntimeError("boom"), ("1.2.3.4:23", "dev")],
     )
@@ -590,7 +596,6 @@ async def test_background_connect_error_retries(connection_mock, worker_mock):
 
 
 @patch("pydeako.deako._manager.CONNECTION_RETRY_DELAY_S", 0)
-@patch("pydeako.deako._manager.CONNECTED_POLLING_INTERVAL_S", 0.01)
 @patch("pydeako.deako._manager._Manager.send_request")
 @patch("pydeako.deako._manager._Connection")
 @pytest.mark.asyncio
@@ -599,7 +604,7 @@ async def test_reconnect_error_after_lost_connection_retries(
     send_request_mock,
 ):
     """Test an unexpected error is also retried after a lost connection."""
-    connection_mock.return_value.is_connected.return_value = True
+    connection_mock.return_value.wait_connected = AsyncMock(return_value=True)
     get_address = AsyncMock(
         side_effect=[RuntimeError("boom"), ("1.2.3.4:23", "dev")],
     )
@@ -622,19 +627,20 @@ async def test_reconnect_error_after_lost_connection_retries(
 @patch("pydeako.deako._manager._Manager.maintain_connection_worker")
 @patch("pydeako.deako._manager._Manager.create_connection_task")
 @patch("pydeako.deako._manager._Connection")
-@patch("pydeako.deako._manager.asyncio.sleep", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_init_connection_connected_at_deadline(
-    sleep_mock,
+async def test_init_connection_dropped_at_once_is_kept(
     connection_mock,
     create_connection_mock,
     worker_mock,
 ):
-    """Test a connection made in the last polling interval is kept."""
-    polls = CONNECTION_TIMEOUT_S  # still connecting after every interval
-    connection_mock.return_value.is_connected.side_effect = [False] * polls + [
-        True
-    ] * 5
+    """
+    Test a connection that drops right after connecting is still kept.
+
+    Retrying at once could loop against a bridge that accepts and closes;
+    the ping worker replaces the connection after PING_WORKER_WAIT_S.
+    """
+    connection_mock.return_value.wait_connected = AsyncMock(return_value=True)
+    connection_mock.return_value.is_connected.return_value = False
     manager = _Manager(AsyncMock(return_value=("1.2.3.4:23", "dev")), Mock())
 
     await manager.init_connection()
@@ -642,7 +648,6 @@ async def test_init_connection_connected_at_deadline(
     connection_mock.return_value.close.assert_not_called()
     create_connection_mock.assert_not_called()
     worker_mock.assert_called_once()
-    assert sleep_mock.await_count == CONNECTION_TIMEOUT_S
     assert manager.connection is connection_mock.return_value
 
 

@@ -23,11 +23,9 @@ class FindDevicesError(Exception):
         return f"Failed to find devices: {self.reason}"
 
 
-# 2s per device to be received to be conservative
+# Time allowed for each announced device to arrive.
 DEVICE_FOUND_TIME_FACTOR_S = 2
 DEFAULT_DEVICE_LIST_TIMEOUT_S = 10
-DEVICE_LIST_POLLING_INTERVAL_S = 1
-DEVICE_FOUND_POLLING_INTERVAL_S = 1
 
 CAPABILITY_DIMMABLE = "dim"
 # Upper bound on devices accepted from one bridge.
@@ -108,6 +106,8 @@ class Deako:
         )
         self.devices: dict[str, Any] = {}
         self.expected_devices = 0
+        # Set when the device count or a device arrives, for find_devices.
+        self.devices_changed = asyncio.Event()
 
     def update_state(
         self,
@@ -164,6 +164,7 @@ class Deako:
             _LOGGER.error("Ignoring invalid device count %s", _short(count))
             return
         self.expected_devices = count
+        self.devices_changed.set()
 
     def _handle_device_found(self, data: dict[str, Any]) -> None:
         """Record a device the bridge reported."""
@@ -224,6 +225,7 @@ class Deako:
         self.devices[uuid]["dimmable"] = dimmable
         self.devices[uuid]["state"]["power"] = power
         self.devices[uuid]["state"]["dim"] = dim
+        self.devices_changed.set()
 
     async def connect(self) -> None:
         """
@@ -264,41 +266,42 @@ class Deako:
         success = await self.connection_manager.send_get_device_list()
         if not success:
             raise FindDevicesError("Failed to send device list request")
-        remaining = timeout
-        # wait for device list
-        while self.expected_devices == 0 and remaining > 0:
-            _LOGGER.debug(
-                "waiting for device list... time remaining: %is",
-                remaining,
-            )
-            await asyncio.sleep(DEVICE_LIST_POLLING_INTERVAL_S)
-            remaining -= DEVICE_LIST_POLLING_INTERVAL_S
-
-        # still 0: no answer, or a list without devices
-        if self.expected_devices == 0:
+        counted = await self._wait_until(
+            lambda: self.expected_devices != 0, timeout
+        )
+        if not counted:
+            # still 0: no answer, or a list without devices
             raise FindDevicesError(
                 "Timed out waiting for device list response",
             )
 
-        remaining = self.expected_devices * DEVICE_FOUND_TIME_FACTOR_S
-        while len(self.devices) != self.expected_devices and remaining > 0:
-            _LOGGER.debug(
-                "waiting for devices... expected: %i, received: "
-                "%i, time remaining: %is",
-                self.expected_devices,
-                len(self.devices),
-                remaining,
-            )
-            await asyncio.sleep(DEVICE_FOUND_POLLING_INTERVAL_S)
-            remaining -= DEVICE_FOUND_POLLING_INTERVAL_S
-        _LOGGER.debug("found %i devices", len(self.devices))
-
-        if len(self.devices) != self.expected_devices and remaining == 0:
+        all_found = await self._wait_until(
+            lambda: len(self.devices) == self.expected_devices,
+            self.expected_devices * DEVICE_FOUND_TIME_FACTOR_S,
+        )
+        if not all_found:
             raise FindDevicesError(
                 f"Timed out waiting for devices to be found. Expected "
                 f"{self.expected_devices} devices but only found "
                 f"{len(self.devices)}",
             )
+        _LOGGER.debug("found %i devices", len(self.devices))
+
+    async def _wait_until(
+        self, condition: Callable[[], bool], timeout: float
+    ) -> bool:
+        """Wait until condition() holds; return False after timeout s."""
+        try:
+            await asyncio.wait_for(self._wait_for_change(condition), timeout)
+        except TimeoutError:
+            return condition()
+        return True
+
+    async def _wait_for_change(self, condition: Callable[[], bool]) -> None:
+        """Wait for device updates until condition() holds."""
+        while not condition():
+            self.devices_changed.clear()
+            await self.devices_changed.wait()
 
     async def control_device(
         self,

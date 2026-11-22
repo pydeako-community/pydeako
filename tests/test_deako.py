@@ -1,5 +1,6 @@
 """Test Deako."""
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import Mock, patch
@@ -319,15 +320,13 @@ def test_get_devices():
 
 
 @patch("pydeako.deako._deako._Manager", autospec=True)
-@patch("pydeako.deako._deako.asyncio", autospec=True)
 @pytest.mark.asyncio
-# pylint: disable-next=unused-argument
-async def test_find_devices_no_expected_devices(asyncio_mock, manager_mock):
+async def test_find_devices_no_expected_devices(manager_mock):
     """Test Deako.find_devices no expected devices raises."""
     deako = Deako(Mock())
 
     with pytest.raises(FindDevicesError) as exc:
-        await deako.find_devices()
+        await deako.find_devices(timeout=0.01)
 
     assert str(exc.value) == (
         "Failed to find devices: Timed out waiting for device list response"
@@ -335,11 +334,10 @@ async def test_find_devices_no_expected_devices(asyncio_mock, manager_mock):
     manager_mock.return_value.send_get_device_list.assert_called_once()
 
 
+@patch("pydeako.deako._deako.DEVICE_FOUND_TIME_FACTOR_S", 0.001)
 @patch("pydeako.deako._deako._Manager", autospec=True)
-@patch("pydeako.deako._deako.asyncio", autospec=True)
 @pytest.mark.asyncio
-# pylint: disable-next=unused-argument
-async def test_find_devices_devices_timeout(asyncio_mock, manager_mock):
+async def test_find_devices_devices_timeout(manager_mock):
     """Test Deako.find_devices times out and raises."""
     deako = Deako(Mock())
 
@@ -355,10 +353,8 @@ async def test_find_devices_devices_timeout(asyncio_mock, manager_mock):
 
 
 @patch("pydeako.deako._deako._Manager", autospec=True)
-@patch("pydeako.deako._deako.asyncio", autospec=True)
 @pytest.mark.asyncio
-# pylint: disable-next=unused-argument
-async def test_find_devices(asyncio_mock, manager_mock):
+async def test_find_devices(manager_mock):
     """Test Deako.find_devices."""
     deako = Deako(Mock())
 
@@ -367,16 +363,50 @@ async def test_find_devices(asyncio_mock, manager_mock):
     for i in range(42):
         deako.devices[str(i)] = i
 
-    await deako.find_devices()
+    await deako.find_devices(timeout=0)
 
     manager_mock.return_value.send_get_device_list.assert_called_once()
 
 
-@patch("pydeako.deako._deako._Manager", autospec=True)
-@patch("pydeako.deako._deako.asyncio", autospec=True)
 @pytest.mark.asyncio
-# pylint: disable-next=unused-argument
-async def test_find_devices_send_request_fails(asyncio_mock, manager_mock):
+async def test_find_devices_waits_for_late_devices():
+    """Test Deako.find_devices returns when the last device arrives."""
+    deako = Deako(Mock())
+    manager = Mock()
+    loop = asyncio.get_running_loop()
+
+    def device_found(uuid: str) -> None:
+        deako.incoming_json(
+            {
+                "type": "DEVICE_FOUND",
+                "data": {"name": uuid, "uuid": uuid, "state": {"power": True}},
+            },
+        )
+
+    async def send_get_device_list() -> bool:
+        # The count and the devices come after the request is answered.
+        loop.call_later(
+            0.01,
+            deako.incoming_json,
+            {"type": "DEVICE_LIST", "data": {"number_of_devices": 2}},
+        )
+        loop.call_later(0.02, device_found, "a")
+        loop.call_later(0.03, device_found, "b")
+        return True
+
+    manager.send_get_device_list = send_get_device_list
+    deako.connection_manager = manager
+
+    start = loop.time()
+    await deako.find_devices(timeout=5)
+
+    assert set(deako.get_devices()) == {"a", "b"}
+    assert loop.time() - start < 1
+
+
+@patch("pydeako.deako._deako._Manager", autospec=True)
+@pytest.mark.asyncio
+async def test_find_devices_send_request_fails(manager_mock):
     """Test Deako.find_devices when sending device list request fails."""
     deako = Deako(Mock())
 
@@ -504,7 +534,6 @@ def test_incoming_json_device_list_invalid_count(count):
     assert deako.expected_devices == 0
 
 
-@patch("pydeako.deako._deako.DEVICE_LIST_POLLING_INTERVAL_S", 0.01)
 @pytest.mark.asyncio
 async def test_find_devices_invalid_count_raises_find_devices_error():
     """Test an invalid device count ends in FindDevicesError."""

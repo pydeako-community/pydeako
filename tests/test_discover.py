@@ -66,7 +66,8 @@ def test_deako_discoverer_init_no_zc(
     )
 
 
-@patch("pydeako.discover._discover.TIMEOUT_S", 1)
+@patch("pydeako.discover._discover.POLLING_INTERVAL_S", 0.01)
+@patch("pydeako.discover._discover.TIMEOUT_S", 0.05)
 @patch("pydeako.discover._discover.ServiceBrowser.__init__")
 @patch("pydeako.discover._discover.DeakoListener", spec=DeakoListener)
 @patch("pydeako.discover._discover._AddressPool", spec=_AddressPool)

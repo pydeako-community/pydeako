@@ -75,6 +75,8 @@ class _Connection:
         self.bad_input_logged = False
         self.socket = _SocketConnection(address, self.loop)
         self.tasks = set()
+        # Set once the socket has connected; it stays set after that.
+        self.connected_event = asyncio.Event()
 
     async def send_data(self, data_to_send: str) -> None:
         """Send data to socket."""
@@ -189,6 +191,14 @@ class _Connection:
         for task in self.tasks:
             task.cancel()
 
+    async def wait_connected(self, timeout: float) -> bool:
+        """Wait for the socket to connect; return False after timeout s."""
+        try:
+            await asyncio.wait_for(self.connected_event.wait(), timeout)
+        except TimeoutError:
+            return False
+        return True
+
     def is_connected(self) -> bool:
         """Return whether or not connected."""
         return self.state == ConnectionState.CONNECTED
@@ -200,6 +210,7 @@ class _Connection:
                 try:
                     await self.socket.connect_socket()
                     self.state = ConnectionState.CONNECTED
+                    self.connected_event.set()
                     _LOGGER.info(
                         "Connected to Deako local integrations with %s",
                         self.format_name(),

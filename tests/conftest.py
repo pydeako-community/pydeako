@@ -9,7 +9,7 @@ from zeroconf import Zeroconf
 from pydeako.deako import Deako
 from pydeako.discover import _discover
 
-from .fake_bridge import FAST_TIMING, FakeDeakoConnect, default_devices
+from .fake_bridge import FakeDeakoConnect, default_devices
 
 
 class _NoZeroconf(Zeroconf):
@@ -27,12 +27,8 @@ def _no_zeroconf_on_the_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest_asyncio.fixture(name="bridge")
-async def fixture_bridge(
-    monkeypatch: pytest.MonkeyPatch,
-) -> AsyncIterator[FakeDeakoConnect]:
-    """Start a fake bridge with three devices and shorten the polling."""
-    for module, name, value in FAST_TIMING:
-        monkeypatch.setattr(module, name, value)
+async def fixture_bridge() -> AsyncIterator[FakeDeakoConnect]:
+    """Start a fake bridge with three devices."""
     fake = FakeDeakoConnect(default_devices())
     await fake.start()
     yield fake

@@ -12,16 +12,7 @@ import asyncio
 import json
 from typing import Any
 
-from pydeako.deako import _deako, _manager
-
 CRLF = b"\r\n"
-
-# Polling intervals short enough for tests, as (module, name, value).
-FAST_TIMING = (
-    (_manager, "CONNECTED_POLLING_INTERVAL_S", 0.01),
-    (_deako, "DEVICE_LIST_POLLING_INTERVAL_S", 0.01),
-    (_deako, "DEVICE_FOUND_POLLING_INTERVAL_S", 0.01),
-)
 
 
 def default_devices() -> dict[str, dict[str, Any]]:

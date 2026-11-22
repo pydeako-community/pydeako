@@ -11,9 +11,11 @@ import pytest
 from pydeako import DevicesNotFoundError
 from pydeako.deako import Deako, FindDevicesError, _manager
 
-from .fake_bridge import CRLF, FakeDeakoConnect
+from .fake_bridge import CRLF, FakeDeakoConnect, default_devices
 
 WAIT_S = 5
+# Generous for a slow CI runner, well under a 1 s polling interval.
+STARTUP_LIMIT_S = 0.5
 
 
 async def _wait_for(event: asyncio.Event) -> None:
@@ -38,6 +40,34 @@ async def test_find_devices(client: Deako) -> None:
     assert client.is_dimmable("uuid-2") is False
     assert client.get_state("uuid-1") == {"power": False, "dim": 40}
     assert client.get_state("uuid-2") == {"power": True, "dim": None}
+
+
+@pytest.mark.asyncio
+async def test_startup_has_no_polling_delay() -> None:
+    """
+    Test connect() and find_devices() return once the bridge has answered.
+
+    The library's own timings apply here, not the shortened test ones.
+    """
+    fake = FakeDeakoConnect(default_devices())
+    fake.chunk_size = 64  # devices arrive over many reads
+    await fake.start()
+    deako = Deako(fake.get_address)
+    loop = asyncio.get_running_loop()
+    try:
+        start = loop.time()
+        await deako.connect()
+        connected = loop.time()
+        await deako.find_devices()
+        found = loop.time()
+    finally:
+        await deako.disconnect()
+        await fake.stop()
+
+    assert len(deako.get_devices()) == len(fake.devices)
+    # Each step takes milliseconds; a polling loop would add a second.
+    assert connected - start < STARTUP_LIMIT_S
+    assert found - connected < STARTUP_LIMIT_S
 
 
 @pytest.mark.asyncio

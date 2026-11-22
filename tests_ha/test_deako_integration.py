@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant.common import MockConfigEntry
 
 from pydeako import DevicesNotFoundError
-from tests.fake_bridge import FAST_TIMING, FakeDeakoConnect, default_devices
+from tests.fake_bridge import FakeDeakoConnect, default_devices
 
 WAIT_S = 5
 
@@ -32,11 +32,8 @@ def hass_config_dir(hass_tmp_config_dir: str) -> str:
 @pytest.fixture(name="bridge")
 async def fixture_bridge(
     socket_enabled: None,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[FakeDeakoConnect]:
     """Start the fake bridge; sockets to 127.0.0.1 are allowed."""
-    for module, name, value in FAST_TIMING:
-        monkeypatch.setattr(module, name, value)
     fake = FakeDeakoConnect(default_devices())
     await fake.start()
     yield fake

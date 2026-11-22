@@ -25,7 +25,6 @@ from .utils import _Connection
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
-CONNECTED_POLLING_INTERVAL_S = 1
 CONNECTION_TIMEOUT_S = 10
 # Wait before trying again after connecting failed unexpectedly.
 CONNECTION_RETRY_DELAY_S = 10
@@ -104,19 +103,15 @@ class _Manager:
             return
         connection = _Connection(address, name, self.incoming_json)
         connection.start()
-        timeout = 0
         try:
-            while (
-                not connection.is_connected()
-                and timeout < CONNECTION_TIMEOUT_S
-            ):
-                await asyncio.sleep(CONNECTED_POLLING_INTERVAL_S)
-                timeout += CONNECTED_POLLING_INTERVAL_S
+            connected = await connection.wait_connected(CONNECTION_TIMEOUT_S)
         except BaseException:
             # e.g. cancelled by close(): don't leave the socket open
             connection.close()
             raise
-        if not connection.is_connected():
+        # A connection that drops right after connecting is still kept; the
+        # ping worker replaces it, which spaces out the attempts.
+        if not connected:
             _LOGGER.error("Timeout attempting to connect. Trying again")
             connection.close()
             self.create_connection_task()

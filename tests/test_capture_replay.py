@@ -17,7 +17,7 @@ import pytest_asyncio
 
 from pydeako.deako import Deako
 
-from .fake_bridge import CRLF, FAST_TIMING, FakeDeakoConnect
+from .fake_bridge import CRLF, FakeDeakoConnect
 
 CAPTURE = Path(__file__).parent / "fixtures" / "bridge_capture.json"
 WAIT_S = 5
@@ -109,12 +109,8 @@ class ReplayBridge:
 
 
 @pytest_asyncio.fixture(name="replay")
-async def fixture_replay(
-    monkeypatch: pytest.MonkeyPatch,
-) -> AsyncIterator[ReplayBridge]:
+async def fixture_replay() -> AsyncIterator[ReplayBridge]:
     """Start a bridge that replays the recording."""
-    for module, name, value in FAST_TIMING:
-        monkeypatch.setattr(module, name, value)
     bridge = ReplayBridge()
     await bridge.start()
     yield bridge
