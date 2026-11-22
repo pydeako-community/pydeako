@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pydeako-community"
-version = "0.7.0"
+version = "0.7.1"
 authors = [
   { name="Deako", email="software@deako.com" },
   { name="pydeako-community contributors" },
