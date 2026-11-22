@@ -6,9 +6,25 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      # The publish action runs with the PyPI identity: review it alone.
+      actions:
+        patterns: ["*"]
+        exclude-patterns: ["pypa/gh-action-pypi-publish"]
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      # Left out: the release tools, and zeroconf and pytest-homeassistant,
+      # whose bumps re-test the library against what it runs with.
+      dev-tools:
+        patterns: ["*"]
+        exclude-patterns:
+          - zeroconf
+          - pytest-homeassistant
+          - build
+          - twine
+          - setuptools

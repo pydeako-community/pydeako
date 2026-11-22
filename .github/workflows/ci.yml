@@ -4,23 +4,31 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  # The release workflow runs all of this before it publishes.
+  workflow_call:
+    outputs:
+      dist-sha256:
+        description: Checksums of the built distributions, base64 encoded
+        value: ${{ jobs.build.outputs.sha256 }}
 
 permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
     name: Lint and test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,16 +37,85 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt -r requirements_test.txt
-      - run: ruff check pydeako tests
-      - run: ruff format --check pydeako tests
+      - run: ruff check pydeako tests tests_ha
+      - run: ruff format --check pydeako tests tests_ha
       - run: pylint pydeako tests
       - run: mypy pydeako tests
       - run: coverage run -m pytest
       - run: coverage report
+      - run: zizmor .github
 
+  # Runs only the hash-locked tools, so nothing else can touch dist/.
   build:
     name: Build distributions
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - run: pip install --require-hashes -r requirements_release.txt
+      # The backend comes from the hash-locked file, not from an unhashed
+      # isolated environment.
+      - run: python -m build --no-isolation
+      - run: twine check --strict dist/*
+      - name: Check the wheel holds only the package
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          (wheel,) = glob.glob("dist/*.whl")
+          top = {name.split("/")[0] for name in zipfile.ZipFile(wheel).namelist()}
+          extra = {t for t in top if t != "pydeako" and not t.endswith(".dist-info")}
+          assert not extra, f"unexpected top-level entries: {sorted(extra)}"
+          PY
+      - id: hash
+        run: echo "sha256=$(cd dist && sha256sum * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  wheel:
+    name: Test the built wheel
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Run the tests from the sdist against the installed wheel
+        run: |
+          mkdir sdist
+          tar -xzf dist/*.tar.gz -C sdist --strip-components=1
+          python -m venv venv
+          venv/bin/pip install dist/*.whl \
+            -r sdist/requirements.txt -r sdist/requirements_test.txt
+          cd sdist
+          # Without the source tree, the tests can only import the wheel.
+          rm -r pydeako
+          ../venv/bin/python -m pytest
+
+  home-assistant:
+    name: Home Assistant integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -48,11 +125,18 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
-      - run: pip install --require-hashes -r requirements_release.txt
-      - run: python -m build
-      - run: twine check --strict dist/*
-      - name: Check the wheel ships no tests
-        run: |
-          if python -m zipfile -l dist/*.whl | grep -E '/test_[^/]*\.py'; then
-            exit 1
-          fi
+      # Its own environment: Home Assistant pins other pytest versions.
+      - run: pip install . -r requirements_ha.txt
+      - run: pytest tests_ha
+
+  passed:
+    name: CI passed
+    if: always()
+    needs: [test, build, wheel, home-assistant]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}

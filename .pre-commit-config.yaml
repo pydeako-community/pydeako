@@ -24,6 +24,12 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      - id: zizmor
+        name: zizmor
+        entry: zizmor .github
+        language: system
+        files: ^\.github/
+        pass_filenames: false
       - id: tests
         name: tests with coverage
         entry: sh -c "coverage run -m pytest -q && coverage report"
