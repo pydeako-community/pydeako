@@ -1,4 +1,4 @@
-"""Module for controlling deako devices locally."""
+"""Client for Deako devices on the local network."""
 
 from ._deako import Deako, FindDevicesError
 

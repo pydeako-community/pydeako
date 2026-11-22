@@ -47,7 +47,6 @@ class DeakoDiscoverer(ServiceBrowser):
         """Start browsing, on the given zeroconf or on a new instance."""
         self.zeroconf = zeroconf or Zeroconf()
         self.address_pool = _AddressPool()
-        # Note that this begins discovering on init
         super().__init__(
             self.zeroconf,
             DEAKO_TYPE,
@@ -90,7 +89,7 @@ class DeakoDiscoverer(ServiceBrowser):
 
 
 class DeakoListener(ServiceListener):
-    """Listener class that satisfies the interface for zeroconf browsers."""
+    """Passes zeroconf's service changes on to the address pool."""
 
     def __init__(
         self,
@@ -114,7 +113,7 @@ class DeakoListener(ServiceListener):
         type_: str,
         name: str,
     ) -> None:
-        """Remove addresses associated with service."""
+        """Remove every address of a service that went away."""
         _LOGGER.debug(
             "Remove service with address type %s, name %s",
             type_,

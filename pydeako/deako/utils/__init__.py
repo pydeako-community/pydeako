@@ -1,4 +1,4 @@
-"""Socket connection utils wrapper."""
+"""The socket connection to the bridge."""
 
 from ._connection import _Connection
 

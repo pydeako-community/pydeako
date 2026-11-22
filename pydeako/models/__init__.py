@@ -1,7 +1,7 @@
 """
-Types and functions to generate requests to Deako devices.
+Types and functions to build requests for the Deako local API.
 
-Source reference:
+The API is described in docs/local-api.md, a copy of
 https://github.com/DeakoLights/local-integrations/blob/master/API.md
 """
 

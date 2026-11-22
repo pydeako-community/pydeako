@@ -115,7 +115,7 @@ class Deako:
         power: bool,
         dim: int | None = None,
     ) -> None:
-        """Update an in memory device's state."""
+        """Update a known device's state and call its callback."""
         if uuid not in self.devices:
             return
 
@@ -140,7 +140,7 @@ class Deako:
             self.devices[uuid]["callback"] = callback
 
     def incoming_json(self, in_data: dict[str, Any]) -> None:
-        """Parse incoming socket data which is json."""
+        """Handle a message from the bridge."""
         try:
             if in_data["type"] == ResponseType.DEVICE_LIST:
                 self._handle_device_list(in_data["data"])
@@ -216,7 +216,7 @@ class Deako:
         power: bool,
         dim: int | None = None,
     ) -> None:
-        """Store a device in local memory."""
+        """Add a device or update the one with this uuid."""
         if uuid not in self.devices:
             self.devices[uuid] = {"state": {}}
 

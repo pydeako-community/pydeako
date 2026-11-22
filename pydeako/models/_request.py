@@ -1,4 +1,4 @@
-"""Deako local integration models."""
+"""Functions that build local API requests."""
 
 from typing import Any
 from uuid import uuid4

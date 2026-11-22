@@ -86,8 +86,8 @@ async def get_address() -> tuple[str, str]:
 | `DeakoDiscoverer(zeroconf=None)` | Browses for `_deako._tcp.local.` on a thread, using your `Zeroconf` instance or a new one. |
 | `await discoverer.get_address()` | Returns `(address, name)`. Waits up to 10 s, then raises `DevicesNotFoundError`. |
 | `Deako(get_address, client_name=None)` | The client. Nothing is sent until `connect()`. |
-| `await client.connect()` | Connects. If no device answers, it returns and keeps trying in the background. |
-| `await client.find_devices(timeout=10)` | Loads the devices. Raises `FindDevicesError` if they don't arrive. |
+| `await client.connect()` | Returns once connected. If no device answers within 10 s, it returns anyway and keeps trying in the background. |
+| `await client.find_devices(timeout=10)` | Loads the devices. `timeout` is for the device count; the devices then get 2 s each. Raises `FindDevicesError` if they don't all arrive. |
 | `client.get_devices()` | `{uuid: {"name", "uuid", "dimmable", "state": {"power", "dim"}}}` |
 | `client.get_name(uuid)`, `client.get_state(uuid)`, `client.is_dimmable(uuid)` | Return `None` for an unknown uuid. |
 | `client.set_state_callback(uuid, callback)` | One callback per device, called without arguments on the event loop. |
@@ -106,12 +106,12 @@ See [CONTRIBUTING.md](https://github.com/pydeako-community/pydeako/blob/main/CON
 
 ## License
 
-MIT License, see LICENSE.txt
+MIT License, see [LICENSE.txt](https://github.com/pydeako-community/pydeako/blob/main/LICENSE.txt).
 
 ## Project status
 
-Deako published and maintained `pydeako` until release 0.6.0 (December 2024). The repository has had no activity since then. Its only contributor [no longer maintains anything related to Deako](https://github.com/DeakoLights/pydeako/pull/5#issuecomment-6393009318) and [suggested continuing it as a fork](https://github.com/DeakoLights/pydeako/pull/5#issuecomment-6402937827). Deako didn't answer a request to software@deako.com about maintainership.
+Deako published and maintained `pydeako` until release 0.6.0 (December 2024). The repository has had no commits since then. Its only contributor [no longer maintains anything related to Deako](https://github.com/DeakoLights/pydeako/pull/5#issuecomment-6393009318) and [suggested continuing it as a fork](https://github.com/DeakoLights/pydeako/pull/5#issuecomment-6402937827). Deako didn't answer a request to software@deako.com about maintainership.
 
 This fork keeps the full history of the original project. Release 0.6.1 has the same library code as `pydeako` 0.6.0, repackaged and published from GitHub Actions. Later releases contain fixes; the [release notes](https://github.com/pydeako-community/pydeako/releases) list them.
 
-Bugs in the Home Assistant Deako integration go to [Home Assistant Core](https://github.com/home-assistant/core/issues); bugs in this library go [here](https://github.com/pydeako-community/pydeako/issues).
+Bugs in the Home Assistant Deako integration go to [Home Assistant Core](https://github.com/home-assistant/core/issues); bugs in this library go to [this repository's issues](https://github.com/pydeako-community/pydeako/issues).

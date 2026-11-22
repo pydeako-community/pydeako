@@ -9,11 +9,11 @@ _MAX_PACKET_SIZE_BYTES = 2048
 
 
 class NoSocketError(Exception):
-    """No socket to perform ops exception."""
+    """The socket isn't open."""
 
 
 class _SocketConnection:
-    """Socket wrapper class."""
+    """A non-blocking TCP socket used through the event loop."""
 
     address: str
     loop: asyncio.AbstractEventLoop

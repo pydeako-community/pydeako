@@ -12,7 +12,7 @@ authors = [
 maintainers = [
   { name="iulianmac" },
 ]
-description = "Connect and interact with deako devices over the network locally"
+description = "Discover and control Deako smart switches on the local network"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE.txt"]

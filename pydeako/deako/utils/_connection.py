@@ -1,4 +1,4 @@
-"""Class that manages a socket connection to a deako device."""
+"""The socket connection to a Deako device and the parser for its messages."""
 
 import asyncio
 import codecs
@@ -200,11 +200,11 @@ class _Connection:
         return True
 
     def is_connected(self) -> bool:
-        """Return whether or not connected."""
+        """Return whether the socket is connected."""
         return self.state == ConnectionState.CONNECTED
 
     async def run(self) -> None:
-        """State machine."""
+        """Connect, then read until the connection fails or is closed."""
         while True:
             if self.state == ConnectionState.NOT_STARTED:
                 try:
@@ -256,12 +256,12 @@ class _Connection:
                     )
                     self.state = ConnectionState.CLOSED
             elif self.state == ConnectionState.CLOSED:
-                # this socket is toast
+                # finished; the manager makes a new connection if needed
                 break
             else:
                 _LOGGER.error("Unknown state: %s", self.state)
                 raise UnknownStateError(f"Unknown state: {self.state}")
 
     def format_name(self) -> str:
-        """Format name."""
+        """Return name@address, for log messages."""
         return f"{self.name}@{self.address}"

@@ -31,6 +31,7 @@ No test needs a Deako device, a particular network or anything outside 127.0.0.1
 
 - `tests/fake_bridge.py` is a fake Deako Connect that speaks the [local API](docs/local-api.md) on a loopback port. `tests/test_integration.py` runs the real client against it.
 - `tests/test_discovery.py` runs `DeakoDiscoverer` on a real zeroconf instance that listens on loopback only. The fake's mDNS records are put into the cache, so nothing is announced.
+- `tests/test_capture_replay.py` replays a recording from a real bridge, with names and ids replaced (`tests/fixtures/bridge_capture.json`), and checks that the fake sends messages of the same shape.
 - `tests/test_api.py` pins the public API. Home Assistant calls it, so a change there needs a matching change in Home Assistant.
 - `tests/test_properties.py` feeds generated input to the stream parser.
 - `tests/test_readme_examples.py` runs the README examples.
@@ -47,5 +48,5 @@ Fork the repository, work on a branch, and open the pull request against `main`.
 
 1. Open a pull request that sets `version` in `pyproject.toml`.
 2. After it is merged, publish a GitHub release whose tag is exactly that version, for example `0.7.0`, with generated release notes.
-3. The Release workflow checks that the tag matches, runs the whole CI on the tag and publishes the distributions that CI built to PyPI with Trusted Publishing, once a maintainer approves the `pypi` environment.
+3. The Release workflow checks that the tag matches, runs the whole CI on the tag and publishes the distributions that CI built to PyPI with Trusted Publishing, once a maintainer approves the `pypi` environment. It then signs the same files with Sigstore and attaches them, with their signatures, to the GitHub release.
 4. For Home Assistant, open a dependency bump in `home-assistant/core` that links to the comparison between the two versions, for example `https://github.com/pydeako-community/pydeako/compare/0.6.1...0.7.0`.

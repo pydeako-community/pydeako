@@ -1,11 +1,10 @@
 """
 A fake Deako Connect bridge on 127.0.0.1, for tests.
 
-It speaks the local API
-(https://github.com/DeakoLights/local-integrations/blob/master/API.md):
-CRLF-delimited JSON, DEVICE_LIST followed by one DEVICE_FOUND per device,
-CONTROL answered with "ok" (or an error) and then a DEVICE_STATE_CHANGE
-event, and PING answered with PING.
+It speaks the local API (docs/local-api.md): CRLF-delimited JSON,
+DEVICE_LIST followed by one DEVICE_FOUND per device, CONTROL answered
+with "ok" (or an error) and then a DEVICE_STATE_CHANGE event, and PING
+answered with PING.
 """
 
 import asyncio

@@ -1,10 +1,8 @@
 """
-Control Deako smart lights over the local network.
+Discover and control Deako smart switches on the local network.
 
-The package provides:
- - models to interact with Deako devices locally with a socket connection
- - implementation of a Deako socket client
- - mdns discovery client
+Deako is the client, DeakoDiscoverer finds the bridge over mDNS, and the
+request functions build messages for the local API.
 """
 
 # pylint: disable=duplicate-code

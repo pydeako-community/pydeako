@@ -1,4 +1,4 @@
-"""pydeako mdns discovery client module."""
+"""Discovery of the Deako bridge over mDNS."""
 
 from ._discover import (
     DeakoDiscoverer,

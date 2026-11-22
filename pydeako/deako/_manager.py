@@ -117,7 +117,7 @@ class _Manager:
             self.create_connection_task()
             return
         self.connection = connection
-        # init connection watching
+        # start the ping worker
         if self.maintain_worker is None:
             self.state.canceled = False
             self.maintain_worker = asyncio.create_task(
@@ -195,7 +195,7 @@ class _Manager:
                 break
 
     def incoming_json(self, incoming_json: dict[str, Any]) -> None:
-        """Handle incoming json."""
+        """Answer a pending request, then pass on anything but a pong."""
         transaction_id = incoming_json.get("transactionId")
         pending = (
             self.pending_responses.get(transaction_id)
