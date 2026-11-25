@@ -77,6 +77,8 @@ class _Connection:
         self.tasks = set()
         # Set once the socket has connected; it stays set after that.
         self.connected_event = asyncio.Event()
+        # Set once the connection is closed, by either side.
+        self.closed_event = asyncio.Event()
 
     async def send_data(self, data_to_send: str) -> None:
         """Send data to socket."""
@@ -187,14 +189,23 @@ class _Connection:
 
     def close(self) -> None:
         """Close our socket and cancel all pending tasks."""
+        self.closed_event.set()
         self.socket.close_socket()
         for task in self.tasks:
             task.cancel()
 
     async def wait_connected(self, timeout: float) -> bool:
         """Wait for the socket to connect; return False after timeout s."""
+        return await self._wait(self.connected_event, timeout)
+
+    async def wait_closed(self, timeout: float) -> bool:
+        """Wait for the connection to close; return False after timeout s."""
+        return await self._wait(self.closed_event, timeout)
+
+    @staticmethod
+    async def _wait(event: asyncio.Event, timeout: float) -> bool:
         try:
-            await asyncio.wait_for(self.connected_event.wait(), timeout)
+            await asyncio.wait_for(event.wait(), timeout)
         except TimeoutError:
             return False
         return True

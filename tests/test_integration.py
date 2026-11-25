@@ -220,6 +220,60 @@ async def test_reconnects_after_the_bridge_drops_the_connection(
 
 
 @pytest.mark.asyncio
+async def test_reconnects_at_once_when_the_connection_drops(
+    bridge: FakeDeakoConnect,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a dropped connection is replaced without waiting for a ping."""
+    ping_s = 0.5
+    monkeypatch.setattr(_manager, "PING_WORKER_WAIT_S", ping_s)
+    deako = Deako(bridge.get_address)
+    await deako.connect()
+    manager = deako.connection_manager
+    try:
+        # past the first ping, so the connection has been up for a while
+        await asyncio.sleep(ping_s * 1.2)
+        dropped = manager.connection
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        bridge.drop_clients()
+        await _wait_until(
+            lambda: (
+                manager.connection is not dropped
+                and manager.connection is not None
+                and manager.connection.is_connected()
+            )
+        )
+        elapsed = loop.time() - start
+    finally:
+        await deako.disconnect()
+
+    assert bridge.connections == 2
+    assert elapsed < ping_s / 2
+
+
+@pytest.mark.asyncio
+async def test_reconnect_attempts_are_spaced_out(
+    bridge: FakeDeakoConnect,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test a bridge that closes every connection isn't retried in a loop."""
+    ping_s = 0.2
+    run_s = 1.0
+    monkeypatch.setattr(_manager, "PING_WORKER_WAIT_S", ping_s)
+    bridge.close_on_accept = True
+    deako = Deako(bridge.get_address)
+    await deako.connect()
+    try:
+        await asyncio.sleep(run_s)
+    finally:
+        await deako.disconnect()
+
+    # one attempt per ping interval, plus some slack for a slow runner
+    assert 2 <= bridge.connections <= run_s / ping_s + 2
+
+
+@pytest.mark.asyncio
 async def test_ping_keeps_the_connection(
     bridge: FakeDeakoConnect,
     monkeypatch: pytest.MonkeyPatch,
