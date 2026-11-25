@@ -1,5 +1,9 @@
 # pydeako
 
+[![CI](https://github.com/pydeako-community/pydeako/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pydeako-community/pydeako/actions/workflows/ci.yml?query=branch%3Amain)
+[![PyPI](https://img.shields.io/pypi/v/pydeako-community)](https://pypi.org/project/pydeako-community/)
+[![Coverage: 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/pydeako-community/pydeako/blob/main/CONTRIBUTING.md#checks)
+
 `pydeako` is a Python library for discovering, connecting to, and controlling Deako smart switches and dimmers on the local network. It talks to a Deako Connect over the [Deako local API](https://github.com/pydeako-community/pydeako/blob/main/docs/local-api.md), and the [Home Assistant Deako integration](https://www.home-assistant.io/integrations/deako) is built on it.
 
 This is the community-maintained continuation of [DeakoLights/pydeako](https://github.com/DeakoLights/pydeako), published on PyPI as `pydeako-community`. The import name is still `pydeako`.
