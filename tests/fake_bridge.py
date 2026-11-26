@@ -49,6 +49,8 @@ class FakeDeakoConnect:
         self.response_delay_s = 0.0
         # Read requests but never answer, like a bridge that hangs.
         self.silent = False
+        # Close each connection as soon as it is accepted.
+        self.close_on_accept = False
         # Send all messages of one answer in a single write.
         self.batch = False
         # Above 0, write in pieces of this many bytes with a pause between.
@@ -168,6 +170,10 @@ class FakeDeakoConnect:
         assert task is not None
         self._handlers.add(task)
         self.connections += 1
+        if self.close_on_accept:
+            writer.close()
+            self._handlers.discard(task)
+            return
         self.writers.append(writer)
         try:
             while True:

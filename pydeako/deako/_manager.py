@@ -168,31 +168,52 @@ class _Manager:
             self.create_connection_task()
 
     async def maintain_connection_worker(self) -> None:
-        """Monitor connection and restart if there's a failure."""
-        await asyncio.sleep(PING_WORKER_WAIT_S)
-        while not self.state.canceled:
+        """Ping the device; reconnect if it stops answering or disconnects."""
+        connected_at = asyncio.get_running_loop().time()
+        lost = await self._connection_lost_within(PING_WORKER_WAIT_S)
+        while not lost and not self.state.canceled:
             self.pong_received = False
             _LOGGER.debug("Pinging for responsiveness")
             try:
                 await self.send_request(
                     _Request(device_ping_request(source=self.client_name)),
                 )
-                await asyncio.sleep(PING_WORKER_WAIT_S)
+                lost = await self._connection_lost_within(PING_WORKER_WAIT_S)
             # An unexpected error must not stop the liveness check for good;
             # treat it like a missing pong and reconnect.
             except Exception:  # pylint: disable=broad-exception-caught
                 _LOGGER.exception("Pinging the device failed")
                 self.pong_received = False
+            if lost:
+                break
             if self.pong_received:
                 _LOGGER.debug("Pong received")
             else:
                 _LOGGER.warning("Never received pong! Dumping this connection")
-                self.close()
-                # close() marks the manager canceled, but this is a
-                # reconnect: a failed attempt must still be retried.
-                self.state.canceled = False
-                self.create_connection_task()
-                break
+                self._reconnect()
+                return
+        if lost:
+            _LOGGER.warning("Connection lost, reconnecting")
+            # A device that closes each connection right after accepting it
+            # gets one attempt per PING_WORKER_WAIT_S, not a tight loop.
+            since = asyncio.get_running_loop().time() - connected_at
+            await asyncio.sleep(max(0.0, PING_WORKER_WAIT_S - since))
+            self._reconnect()
+
+    async def _connection_lost_within(self, timeout: float) -> bool:
+        """Wait timeout s; return True as soon as the connection closes."""
+        if self.connection is None:
+            await asyncio.sleep(timeout)
+            return False
+        return await self.connection.wait_closed(timeout)
+
+    def _reconnect(self) -> None:
+        """Replace the connection with a new one."""
+        self.close()
+        # close() marks the manager canceled, but this is a
+        # reconnect: a failed attempt must still be retried.
+        self.state.canceled = False
+        self.create_connection_task()
 
     def incoming_json(self, incoming_json: dict[str, Any]) -> None:
         """Answer a pending request, then pass on anything but a pong."""
